@@ -49,9 +49,9 @@ When a major disaster hits, people need cash first, for transport, medicine, som
 - Making a live demo deterministic: recorded LLM fixtures, real USGS data, real sandbox payouts.
 
 ### Accomplishments we're proud of
-- A red-team suite of [N] attack payloads. Result: [X]% flagged by the sentinel, and **[N]/[N] blocked by the firewall with $0 reaching an unauthorised payee**, even with the agent fully compromised. *(Only claim this if `npm run redteam` shows it.)*
-- [N] firewall unit tests covering every rule boundary.
-- End-to-end real sandbox payout, from earthquake to recipient balance, in [T] seconds.
+- A red-team suite of 27 attack payloads. Result: every payload was flagged by at least one sentinel layer (pattern checks 21/27, Claude Haiku 25/27), and **27/27 attacks moved $0 to an unauthorised payee**, even with the agent fully compromised and a careless reviewer approving everything. (Measured with `npm run redteam -- --llm replay`.)
+- 106 firewall tests covering every rule boundary (336 tests in total).
+- Real sandbox payouts: from approval to $680 landing in seven recipients' sandbox accounts in about 33 seconds.
 
 ### What we learned
 For AI agents that move money, "make the model safer" is the wrong place to put the guarantee. The model should propose; deterministic code should dispose. Limiting what the agent can *express* does more than trying to detect what it was told.
@@ -78,15 +78,15 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 - **Claude Code** — used to build the application, tests and docs.
 - **Claude (Anthropic API)** — the runtime agent (event assessment, tiering, multilingual notes) and the injection sentinel. *(Edit if you use a different model.)*
 - **PayPal Payouts API** — relief disbursement; **Orders v2 / Checkout** — donations; **Webhooks** — live payout status; **PayPal sandbox** — all testing.
-- **USGS Earthquake Hazards API** — real-time and historical event data (+ [second source] for corroboration).
+- **USGS Earthquake Hazards API** — real-time and historical event data (+ EMSC SeismicPortal for independent corroboration).
 - **APIMatic Context Plugin for PayPal** — gave Claude Code the PayPal API context while we built the integration.
 - **AG Grid** — plan and payout tables. **Render** — hosting.
 - **Leaflet / OpenStreetMap** — map.
 
 ## 7. Try it out links (placeholders)
 
-- Live demo: `[RENDER URL]`
-- Code: `[GITHUB URL]`
+- Live demo: https://firstlight.onrender.com
+- Code: https://github.com/OR-6/firstlight
 - Video: `[YOUTUBE URL]`
 
 ---
@@ -98,10 +98,10 @@ Rules: public on YouTube, under 3 minutes, shows the project running, **no music
 | Time | On screen | Voiceover |
 |---|---|---|
 | 0:00–0:15 | Title card "Firstlight", then the Mission Control screen with the SANDBOX badge | "After a disaster, people need cash first, and it arrives last. An AI agent could change that, if you could trust it with a payout button. Firstlight is how." |
-| 0:15–0:45 | Click **Replay** on `[REAL PAST EARTHQUAKE]`. Event card appears with magnitude, PAGER, second-source confirmation. Agent panel streams its assessment | "We replay a real USGS earthquake. Firstlight cross-checks a second source, and the agent decides whether the trigger is genuinely met and explains why, including what it's unsure about." |
+| 0:15–0:45 | Click **Run assessment** on the M7.7 Panama earthquake of 9 October 2026 (USGS `us6000u18k`). Event card appears with magnitude, PAGER, second-source confirmation. Agent panel streams its assessment | "We replay a real USGS earthquake. Firstlight cross-checks a second source, and the agent decides whether the trigger is genuinely met and explains why, including what it's unsure about." |
 | 0:45–1:20 | Plan table (AG Grid): tiers, amounts, verdict chips. Open one row's **rule-trace drawer**. Show localized notes | "The agent proposes tiers using distance and vulnerability. It can't set amounts and can't name a payee. The firewall recomputes everything and shows its working, rule by rule." |
 | 1:20–1:50 | Approval queue → Approve. Payouts screen flips PENDING → SUCCEEDED live. **Split-screen:** a recipient's real PayPal sandbox balance increasing | "One approval, and a PayPal Payouts batch goes out. Webhooks update status live, and here's the money arriving in a recipient's sandbox account." |
-| 1:50–2:25 | Red Team console. Inject the poisoned news item. Toggle **Compromised agent**. Show the agent trying to pay `attacker@…` $5,000. Rule hits light up red; "$0 to unauthorised payees". Show `[N]/[N] attacks blocked` and the audit-chain Verify | "Now we attack it. A poisoned news item tells the agent to send five thousand dollars to a stranger. We even force the agent to obey. It can't. There's no field to put the attacker in, and the firewall blocks it anyway. [N] of [N] attacks in our suite, zero dollars lost." |
+| 1:50–2:25 | Red team console. Run **Inject poisoned news** (the real agent ignores it and names the attacks), then **Compromised agent** (a script obeys and tries to pay `attacker@…`). Rule hits light up; "$0.00 reached anyone not entitled to it". Run **all 27 attacks**: "27 of 27 attacks moved $0.00 to unauthorised payees". Then Audit → Verify chain | "Now we attack it. A poisoned news item tells the agent to send five thousand dollars to a stranger. We even force the agent to obey. It can't. There's no field to put the attacker in, and the firewall blocks it anyway. 27 of 27 attacks in our suite, zero dollars to anyone who shouldn't get it." |
 | 2:25–2:48 | A second agent, "Samaritan", reads Firstlight's manifest, sees the active relief event, and creates a $5 donation within its human-set allowance. Approve it on the PayPal sandbox page; the pool meter ticks up; the agent fetches a receipt and verifies it against the audit log | "Other agents can fund it too. Samaritan finds Firstlight, offers five dollars within its owner's allowance, and a human approves it on PayPal. The receipt ties back to the audit log, so the donor can verify where the money went." |
 | 2:48–2:55 | Closing card: name, tagline, repo and demo URL | "Firstlight. Let the agent act, because it can't act against you. Built with Claude Code and PayPal." |
 
@@ -119,7 +119,7 @@ The five criteria are equally weighted; stage one is pass/fail on theme and PayP
 
 | Criterion | Evidence to make visible |
 |---|---|
-| Technological Implementation | Payouts (idempotent) + Orders + signature-verified Webhooks; agent with schema-validated tools; 11-rule firewall; compromised-agent test; hash-chained audit; `[N]` tests |
+| Technological Implementation | Payouts (idempotent) + Orders + signature-verified Webhooks; agent with schema-validated tools; 11-rule firewall; compromised-agent test; hash-chained audit; 336 tests |
 | Design | Ops-console UI, rule-trace drawer, SANDBOX badge, consistent visual system, map |
 | Potential Impact | Faster cash after disasters; safe autonomy for agents that move money (README "Why this matters") |
 | Innovation / Idea | Capability restriction instead of detection; red-team console anyone can attack; agent-to-agent donations with receipts a donor agent can verify |
@@ -161,4 +161,4 @@ The five criteria are equally weighted; stage one is pass/fail on theme and PayP
 
 ## 12. Placeholders to fill
 
-`[N]` attack count · `[X]%` sentinel catch rate · `[N] tests` · `[T] seconds` end-to-end · `[REAL PAST EARTHQUAKE]` event name/ID · `[RENDER URL]` · `[GITHUB URL]` · `[YOUTUBE URL]` · `[second source]`.
+Filled in on 2026-11-08 from measured results. Still to fill: `[YOUTUBE URL]`.

@@ -6,7 +6,7 @@
 
 After a major earthquake, people need cash first and it arrives last. Firstlight lets an AI agent read the earthquake data, decide whether relief should go out, choose who gets which tier and write to each person in their language. Then a deterministic **payment firewall** checks the plan, computes every amount itself, sends anything unusual to a human, and only then does PayPal Payouts send money. Donors, both people and other AI agents, fund the pool through PayPal Checkout. Built for the PayPal AI Hackathon.
 
-- **Try it:** _hosted demo link added after deployment_ (replay mode, no keys needed)
+- **Try it:** https://firstlight.onrender.com (replay mode, no keys needed; PayPal sandbox)
 - **Video:** _added after recording_
 - Spec: [SPEC.md](SPEC.md) · decisions: [docs/decisions.md](docs/decisions.md) · design: [DESIGN.md](DESIGN.md) · [docs/SECURITY.md](docs/SECURITY.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
@@ -56,7 +56,7 @@ With the real agent (Claude Opus 5.5, recorded run) and four poisoned news items
 ## Quickstart
 
 ```bash
-git clone <this repo> && cd firstlight
+git clone https://github.com/OR-6/firstlight && cd firstlight
 cp .env.example .env          # add your PayPal SANDBOX app credentials
 cp config/payees.sandbox.example.json config/payees.sandbox.json   # your sandbox personal accounts
 npm i

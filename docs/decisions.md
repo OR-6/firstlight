@@ -134,3 +134,8 @@ a law: change it here and in code together. Newest first within each section.
 ### Verified 2026-11-08
 - First Orders call: sandbox order `5NA53430PR501991F` (`PAYER_ACTION_REQUIRED`, approval on `www.sandbox.paypal.com/checkoutnow`).
 - Samaritan end to end: found the manifest, used MCP, created a $5 order, a person approved it on PayPal, the return URL captured it (capture `2M270176F8691393V`), the pool went $4,320 → $4,325, and Samaritan verified audit entry #18 in an intact chain.
+
+### Deployed 2026-11-08
+- Live at https://firstlight.onrender.com (Render, free web service, from `render.yaml`). Code public at https://github.com/OR-6/firstlight (MIT licence detected by GitHub). Full git history scanned before the first push: no credentials, `.env`, payee map or database ever committed.
+- Live checks: health, state, manifest, `llms.txt`, pool, active events all 200; MCP lists the four tools; a replayed Claude assessment produced the $680 plan (REQUIRE_APPROVAL, sentinel clean); the poisoned-news red-team scenario moved $0 to unauthorised payees.
+- PayPal sandbox webhook registered for `https://firstlight.onrender.com/api/webhooks/paypal` (12 event types). Its id must be set as `PAYPAL_WEBHOOK_ID` on Render; until then the server refuses webhook deliveries (503) and relies on 2 s polling.
