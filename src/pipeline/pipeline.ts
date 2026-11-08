@@ -2,8 +2,9 @@ import { runAgent, type AgentResult } from '../agent/agent';
 import { runSentinel, type SentinelReport } from '../agent/sentinel';
 import { evaluatePlan, payableItems } from '../firewall/engine';
 import type { FirewallConfig, FirewallContext, Verdict } from '../firewall/types';
-import { AuditLog } from '../ledger/audit';
-import type { Db } from '../ledger/db';
+import { canonicalJson, sha256Hex } from '../lib/canonical';
+import { AuditLog, type AuditEntry } from '../ledger/audit';
+import { instanceId, type Db } from '../ledger/db';
 import { Ledger, type BatchRow } from '../ledger/ledger';
 import type { LlmClient } from '../llm/client';
 import { PayPalApiError, type PayPalClient } from '../paypal/client';
@@ -36,6 +37,8 @@ export type PipelineDeps = {
   clock?: () => number;
   agentModel?: string;
   sentinelModel?: string;
+  /** Notified after every audit entry (live dashboard). */
+  onAudit?: (entry: AuditEntry) => void;
 };
 
 export type AssessInput = { event: SeismicEvent; corroboration: CorroborationReport; untrusted: readonly UntrustedText[] };
@@ -78,13 +81,14 @@ export class Pipeline {
   constructor(private readonly deps: PipelineDeps) {
     this.clock = deps.clock ?? Date.now;
     this.ledger = new Ledger(deps.db, this.clock);
-    this.audit = new AuditLog(deps.db, this.clock);
+    this.audit = new AuditLog(deps.db, this.clock, deps.onAudit);
     this.events = new EventStore(deps.db);
   }
 
   // ── assess ────────────────────────────────────────────────────────────────
 
-  async assess(input: AssessInput): Promise<Assessment> {
+  async assess(input: AssessInput, opts: { llm?: LlmClient } = {}): Promise<Assessment> {
+    const llm = opts.llm ?? this.deps.llm;
     const stored = this.events.upsert(input.event);
     const event = this.events.get(stored.id) ?? input.event;
     this.audit.append('signal.received', {
@@ -103,12 +107,12 @@ export class Pipeline {
 
     const agent = await runAgent(
       { event, corroboration: input.corroboration, untrusted: input.untrusted, registry: this.deps.registry, config: this.deps.config },
-      this.deps.llm,
+      llm,
       { model: this.deps.agentModel },
     );
     this.audit.append('agent.result', {
       eventId: event.id,
-      llmMode: this.deps.llm.mode,
+      llmMode: llm.mode,
       ok: agent.ok,
       model: agent.model,
       servedBy: agent.ok ? agent.servedBy : null,
@@ -144,7 +148,7 @@ export class Pipeline {
           JSON.stringify({ model: agent.model, turns: agent.turns, steps: agent.steps, reason: agent.ok ? null : agent.reason }),
           JSON.stringify(sentinel),
           JSON.stringify(input.corroboration),
-          this.deps.llm.mode,
+          llm.mode,
           now,
         ).lastInsertRowid,
     );
@@ -224,7 +228,8 @@ export class Pipeline {
       const { batchId } = this.ledger.reservePayoutBatch({
         eventId: plan.event_id,
         planVersion: plan.version,
-        paypalRequestId: verdict.paypalRequestId!,
+        // Same money → same key within this database; a fresh database (demo reset) gets fresh keys.
+        paypalRequestId: sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), firewall: verdict.paypalRequestId })),
         verdictDigest: verdict.digest,
         items: items.map((i) => ({ recipientId: i.recipientId, amountCents: i.amountCents })),
       });
@@ -234,7 +239,7 @@ export class Pipeline {
 
     const items = payableItems(verdict);
     const body = buildPayoutBatchBody({
-      senderBatchId: `firstlight-${plan.event_id}-v${plan.version}`,
+      senderBatchId: `firstlight-${plan.event_id}-v${plan.version}-${instanceId(this.deps.db).slice(0, 8)}`,
       emailSubject: 'Emergency relief payment (SANDBOX)',
       emailMessage: 'This is an automatic relief payment from the Firstlight sandbox demo. No real money moves.',
       items: items.map((i) => ({

@@ -36,6 +36,6 @@ export function parsePayees(raw: unknown, knownIds?: ReadonlySet<string>): Payee
 export function loadPayees(env: Env = process.env, knownIds?: ReadonlySet<string>): PayeeMap {
   if (env.PAYEES_JSON?.trim()) return parsePayees(JSON.parse(env.PAYEES_JSON), knownIds);
   const path = env.PAYEES_FILE?.trim() || 'config/payees.sandbox.json';
-  if (!existsSync(path)) throw new Error(`no payee map: set PAYEES_JSON or create ${path} (see config/payees.sandbox.example.json)`);
-  return parsePayees(JSON.parse(readFileSync(path, 'utf8')), knownIds);
+  if (!existsSync(/*turbopackIgnore: true*/ path)) throw new Error(`no payee map: set PAYEES_JSON or create ${path} (see config/payees.sandbox.example.json)`);
+  return parsePayees(JSON.parse(readFileSync(/*turbopackIgnore: true*/ path, 'utf8')), knownIds);
 }

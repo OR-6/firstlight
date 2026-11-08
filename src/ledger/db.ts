@@ -7,6 +7,10 @@ export type Db = Database.Database;
  * Use ':memory:' in tests. Tables for later milestones (plans, approvals,
  * donations, webhook_events, ...) are added when those features land.
  */
+export function instanceId(db: Db): string {
+  return (db.prepare("SELECT value FROM meta WHERE key = 'instance_id'").get() as { value: string }).value;
+}
+
 export function openDb(path = ':memory:'): Db {
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
@@ -102,6 +106,19 @@ function migrate(db: Db): void {
       payload       TEXT NOT NULL,          -- canonical JSON
       prev_hash     TEXT NOT NULL,
       hash          TEXT NOT NULL UNIQUE
+    );
+
+    -- One random id per database. Mixed into PayPal idempotency keys so a
+    -- demo reset (fresh database) is not mistaken by PayPal for a resend.
+    CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT OR IGNORE INTO meta (key, value) VALUES ('instance_id', lower(hex(randomblob(8))));
+
+    -- Verified PayPal webhook deliveries, de-duplicated on PayPal's event id.
+    CREATE TABLE IF NOT EXISTS webhook_events (
+      id            TEXT PRIMARY KEY,
+      event_type    TEXT NOT NULL,
+      resource_id   TEXT,
+      received_ms   INTEGER NOT NULL
     );
 
     CREATE TRIGGER IF NOT EXISTS audit_log_no_update BEFORE UPDATE ON audit_log

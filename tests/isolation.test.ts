@@ -29,9 +29,11 @@ describe('module isolation', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('only the pipeline imports the payee map (types aside)', () => {
-    const importers = all.filter((f) => /from ['"][./]*\/?registry\/payees['"]|from ['"]\.\/payees['"]/.test(f.code)).map((f) => f.path);
-    expect(importers).toEqual(['pipeline/pipeline.ts']);
+  it('only the executor wiring imports the payee map', () => {
+    const importers = all.filter((f) => /from ['"][./]*\/?registry\/payees['"]|from ['"]\.\/payees['"]/.test(f.code)).map((f) => f.path).sort();
+    // pipeline: executor (type only); server/runtime: loads the real map for execute;
+    // redteam/harness: builds synthetic harness addresses for the isolated simulation.
+    expect(importers).toEqual(['pipeline/pipeline.ts', 'redteam/harness.ts', 'server/runtime.ts']);
     const pipeline = all.find((f) => f.path === 'pipeline/pipeline.ts')!.code;
     expect(pipeline).toMatch(/import type \{ PayeeMap \}/);
   });

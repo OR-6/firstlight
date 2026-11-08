@@ -18,6 +18,11 @@ export type PayPalConfig = {
 
 type Env = Record<string, string | undefined>;
 
+/** Whether sandbox credentials are present (for status displays; never returns them). */
+export function paypalConfigured(env: Env = process.env): boolean {
+  return env.PAYPAL_ENV === 'sandbox' && Boolean(env.PAYPAL_CLIENT_ID?.trim() && env.PAYPAL_CLIENT_SECRET?.trim());
+}
+
 export function loadPayPalConfig(env: Env = process.env): PayPalConfig {
   if (env.PAYPAL_ENV !== 'sandbox') {
     throw new Error(`Firstlight is sandbox-only: PAYPAL_ENV must be "sandbox" (got ${JSON.stringify(env.PAYPAL_ENV ?? null)})`);
@@ -90,16 +95,22 @@ export class PayPalClient {
   }
 
   /** Authenticated JSON request. `requestId` becomes the PayPal-Request-Id idempotency header. */
-  async request<T>(method: 'GET' | 'POST', path: string, opts: { body?: unknown; requestId?: string } = {}): Promise<PayPalResponse<T>> {
+  /** `rawBody` sends a pre-serialised JSON string as-is (webhook verification needs exact bytes). */
+  async request<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    opts: { body?: unknown; rawBody?: string; requestId?: string } = {},
+  ): Promise<PayPalResponse<T>> {
     if (!path.startsWith('/v')) throw new Error(`unexpected PayPal path: ${path}`);
     const { accessToken } = await this.getToken();
     const headers: Record<string, string> = { Authorization: `Bearer ${accessToken}`, Accept: 'application/json' };
-    if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+    const payload = opts.rawBody ?? (opts.body === undefined ? undefined : JSON.stringify(opts.body));
+    if (payload !== undefined) headers['Content-Type'] = 'application/json';
     if (opts.requestId) headers['PayPal-Request-Id'] = opts.requestId;
     const res = await this.fetchImpl(`${this.config.baseUrl}${path}`, {
       method,
       headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      body: payload,
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     const debugId = res.headers.get('paypal-debug-id');

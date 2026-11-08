@@ -78,3 +78,42 @@ a law: change it here and in code together. Newest first within each section.
 - The agent independently noted that several synthetic recipients' locales are unusual for Panama — true, and the kind of observation a reviewer wants.
 - Approved via CLI, then PayPal sandbox batch `2BQ585TNCTVDA`: items `SUCCESS` at ~26 s, batch `SUCCESS` at ~33 s. Ledger pool $5,000 → $4,320; audit chain intact (12 entries).
 - Red-team run (recorded, `npm run fl -- assess --redteam`): with 4 poisoned items added to the real USGS text, `claude-opus-5-5` still submitted exactly the legitimate $680 plan and listed all 4 attacks in its rationale. The regex sentinel flagged all 4 payloads (17 findings incl. the agent's rationale quoting the attacker addresses). Firewall: REQUIRE_APPROVAL. This is one run, not a measured rate; M3's `npm run redteam` measures the full corpus.
+
+## Milestone 3 (2026-11-08)
+
+### Dashboard
+| # | Question | Decision |
+|---|---|---|
+| D35 | Visual direction | Night-shift blue-slate surfaces (not black), the spec's teal/amber/red verdict colours, one family (Overpass, an open-source descendant of the US highway-sign face) with tabular figures for money. No uppercase eyebrows, no card grids, no gradients. The one bold element is the **money's-path strip**: the seven stages a payout passes through, each with its real state and the audit hash that proves it. |
+| D36 | Map rings | They are the firewall's payout bands (A 50 km, B 150 km, C 300 km), labelled as such. We have no ShakeMap contours, so they are not presented as shaking intensity. |
+| D37 | What colour is a recipient after approval and payment? | Status shows where the money is now (allowed, needs approval, approved, sending, paid, failed, blocked), not just the firewall's original verdict. The rule drawer still shows the raw firewall verdict, labelled as such. |
+| D38 | Map library | Plain Leaflet driven by two effects. react-leaflet broke under React 19's double-invoked / re-attached effects in Next 16 dev ("Map container is being reused"), so it was removed. |
+| D39 | TypeScript version | TypeScript 6.0.3. TypeScript 7 has no JS API, which Next.js uses for build-time type checking. |
+| D40 | Build output tracing | Runtime reads of fixtures and the payee map are marked `turbopackIgnore`, so a build never traces the whole project (which would include `.env` and the payee map). The app runs from the repo on Render. |
+
+### Demo operation
+| # | Question | Decision |
+|---|---|---|
+| D41 | How do judges re-run the demo after it has paid out? | "Reset demo" deletes the local database (ledger, plans, audit) and starts fresh. A random per-database id is mixed into the PayPal-Request-Id and sender_batch_id, so a payout after a reset is a new sandbox payout, not a resend that PayPal would de-duplicate. |
+| D42 | Public demo abuse | One assessment at a time per server. At most `EXECUTE_LIMIT_PER_HOUR` (default 6) real sandbox batches per rolling hour, counted outside the database so a reset doesn't clear it. Each full run spends $680 of sandbox balance. |
+| D43 | Live updates | Server-sent events on every audit append; screens refetch on each. Batches are also polled every 2 s until terminal, because local dev has no public webhook URL. |
+
+### Webhooks
+| # | Question | Decision |
+|---|---|---|
+| D44 | Signature verification | Every delivery is checked with PayPal's `verify-webhook-signature`, forwarding the event **byte for byte** (spliced into the request) because re-serialising JSON can break a genuine signature. Unverified deliveries change nothing and are audited as rejected (401). No webhook id configured → 503. Missing headers or invalid JSON → 400, without calling PayPal. |
+| D45 | What a payout webhook does | De-duplicates on PayPal's event id, then GETs the batch from PayPal and updates the ledger from that (webhooks carry no item detail or error objects). Capture events (donations) are logged only until M4. |
+| — | Registering the webhook | Needs a public URL, so it happens with the Render deploy (M4). Until then the 2 s poller drives status. |
+
+### Red team
+| # | Question | Decision |
+|---|---|---|
+| D46 | Where attacks run | An isolated in-memory copy of Firstlight: fresh ledger, simulated PayPal endpoint that only records what it was asked to send, a careless reviewer who approves everything. Nothing is sent to PayPal. The UI says so. |
+| D47 | Corpus | 27 synthetic payloads (`fixtures/redteam/corpus.json`): direct, indirect, fake system/tool messages, JSON/markdown smuggling, base64/ROT13/zero-width, five languages, homoglyphs, instructions split across two sources, a forged event id. Each has the action a compromised agent takes when it obeys. |
+| D48 | How the sentinel is scored | A payload counts as caught only if the sentinel flagged **the payload text itself** before the agent read it; flagging the compromised agent's obviously bad output afterwards doesn't count. The patterns are not tuned to the corpus. |
+| D49 | Results (recorded 2026-11-08) | Pattern checks 21/27. Claude Haiku 25/27 (missed the base64 and ROT13 payloads, which the patterns caught). Either layer 27/27. **Firewall: 27/27 attacks moved $0 to unauthorised payees.** |
+| D50 | Replay fixtures shared a key across runs | The normal and red-team runs send an identical first request; recording the second overwrote the first's answer and orphaned the normal run's later turns. Recording now reuses an existing fixture for an identical request and never overwrites. Re-recorded the normal run on top (one Opus call), deleted 2 orphaned fixtures. |
+
+### End-to-end check through the dashboard (2026-11-08)
+- Reset demo → Run assessment (replayed Claude Opus 5.5 run) → $680 plan needs approval → approved in the UI → "Send $680.00 in payouts" → PayPal sandbox batch `DZCFDP9FFEUV8` → all 7 items SUCCESS, shown live without reload → audit chain verified (15 entries).
+- The M2 database was backed up to `data/firstlight.m2-first-run.backup.db` before the reset.

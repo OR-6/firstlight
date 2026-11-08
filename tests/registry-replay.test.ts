@@ -92,3 +92,15 @@ describe('LLM replay fixtures', () => {
     await expect(new ReplayLlm(dir).create({ ...req, max_tokens: 11 })).rejects.toBeInstanceOf(LlmFixtureMissingError);
   });
 });
+
+describe('recording never overwrites an existing fixture', () => {
+  it('a second run with a shared first request reuses the recorded answer', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fl-llm-'));
+    const req = { model: 'claude-opus-5-5', max_tokens: 10, messages: [{ role: 'user' as const, content: 'shared prefix' }] };
+    const first = await new RecordingLlm(new ScriptedLlm(() => [text('answer A')]), dir).create(req);
+    const live = new ScriptedLlm(() => [text('answer B')]);
+    const second = await new RecordingLlm(live, dir).create(req);
+    expect(second).toEqual(first);
+    expect(live.requests).toHaveLength(0); // the live model was not asked again
+  });
+});

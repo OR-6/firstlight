@@ -1,0 +1,180 @@
+@import 'tailwindcss';
+
+/*
+ * Firstlight console tokens.
+ * Night-shift blue-slate surfaces (an ops room after dark, not black), the three
+ * verdict colours from the spec, and a warm ramp for payout bands on the map.
+ */
+@theme {
+  --font-sans: var(--font-overpass), ui-sans-serif, system-ui, sans-serif;
+
+  --color-ground: #16222c;
+  --color-panel: #1c2b37;
+  --color-raised: #243644;
+  --color-line: #30475a;
+  --color-line-soft: #263a4a;
+  --color-ink: #e4ecf1;
+  --color-ink-muted: #93a7b6;
+  --color-ink-dim: #6b8091;
+
+  --color-allow: #2eb5a4;
+  --color-allow-wash: rgb(46 181 164 / 0.14);
+  --color-hold: #e3a13b;
+  --color-hold-wash: rgb(227 161 59 / 0.14);
+  --color-block: #e5534b;
+  --color-block-wash: rgb(229 83 75 / 0.14);
+
+  --color-band-a: #f08a4b;
+  --color-band-b: #e8c547;
+  --color-band-c: #7fc4d8;
+
+  --radius-chip: 2px;
+  --radius-control: 3px;
+  --radius-panel: 5px;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-ground);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-ground);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-hold);
+    outline-offset: 2px;
+    border-radius: var(--radius-control);
+  }
+  ::selection {
+    background: rgb(46 181 164 / 0.35);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .num {
+    font-variant-numeric: tabular-nums lining-nums;
+    font-feature-settings: 'tnum' 1, 'lnum' 1;
+  }
+  .panel {
+    background: var(--color-panel);
+    border: 1px solid var(--color-line-soft);
+    border-radius: var(--radius-panel);
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 2.25rem;
+    padding: 0 0.9rem;
+    border-radius: var(--radius-control);
+    font-weight: 600;
+    font-size: 0.93rem;
+    border: 1px solid var(--color-line);
+    background: var(--color-raised);
+    color: var(--color-ink);
+    transition: background-color 120ms, border-color 120ms;
+  }
+  .btn:hover:not(:disabled) {
+    border-color: var(--color-ink-dim);
+  }
+  .btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  .btn-go {
+    background: var(--color-allow);
+    border-color: var(--color-allow);
+    color: #0e2a27;
+  }
+  .btn-go:hover:not(:disabled) {
+    border-color: #7de0d3;
+  }
+  .btn-stop {
+    background: transparent;
+    border-color: var(--color-block);
+    color: #ffb4ae;
+  }
+  .field {
+    height: 2.25rem;
+    padding: 0 0.7rem;
+    border-radius: var(--radius-control);
+    background: var(--color-ground);
+    border: 1px solid var(--color-line);
+    color: var(--color-ink);
+  }
+  .field::placeholder {
+    color: var(--color-ink-dim);
+  }
+  .hash {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+    color: var(--color-ink-dim);
+  }
+}
+
+/* Leaflet: dark OpenStreetMap tiles via filter, keeping roads and coastlines legible. */
+.leaflet-container {
+  background: #0f1a22;
+  font-family: var(--font-sans);
+}
+.leaflet-tile-pane {
+  filter: grayscale(0.85) invert(1) brightness(0.78) contrast(0.92) hue-rotate(185deg);
+}
+.leaflet-control-attribution {
+  background: rgb(22 34 44 / 0.8) !important;
+  color: var(--color-ink-dim) !important;
+}
+.leaflet-control-attribution a {
+  color: var(--color-ink-muted) !important;
+}
+.leaflet-tooltip.fl-tip {
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  color: var(--color-ink);
+  border-radius: var(--radius-control);
+  box-shadow: none;
+  font-size: 12.5px;
+}
+.leaflet-tooltip.fl-tip::before {
+  display: none;
+}
+.leaflet-control-zoom a {
+  background: var(--color-raised) !important;
+  color: var(--color-ink) !important;
+  border-color: var(--color-line) !important;
+}
+
+@keyframes slidein {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+/* AG Grid: centre custom cell content vertically */
+.ag-cell {
+  display: flex;
+  align-items: center;
+}
+.ag-cell-wrapper {
+  width: 100%;
+}

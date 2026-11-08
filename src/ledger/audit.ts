@@ -58,6 +58,8 @@ export class AuditLog {
   constructor(
     private readonly db: Db,
     private readonly clock: () => number = Date.now,
+    /** Called after each committed append (live dashboard updates). Errors are swallowed. */
+    private readonly onAppend?: (entry: AuditEntry) => void,
   ) {}
 
   /** Append one entry. Serialised in a transaction so concurrent appends can't fork the chain. */
@@ -76,7 +78,13 @@ export class AuditLog {
         .run(seq, tsMs, type, canonicalJson(clean), prevHash, hash);
       return { seq, tsMs, type, payload: clean, prevHash, hash };
     });
-    return tx.immediate();
+    const entry = tx.immediate();
+    try {
+      this.onAppend?.(entry);
+    } catch {
+      /* listeners must never break the audit path */
+    }
+    return entry;
   }
 
   entries(): AuditEntry[] {

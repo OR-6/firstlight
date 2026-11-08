@@ -30,9 +30,10 @@ describe('pipeline: assess → approve → execute → poll', () => {
     pipeline.decide(a.planId, 'approve', 'ops@firstlight.test', 'Verified on USGS event page');
 
     const batch = await pipeline.execute(a.planId, pp.client, PAYEES);
-    expect(batch.paypal_batch_id).toBe('FAKEBATCH1');
+    expect(batch.paypal_batch_id).toBe('SIMBATCH1');
     expect(pp.sent).toHaveLength(7);
-    expect(pp.sent.every((s) => s.requestId === a.verdict!.paypalRequestId)).toBe(true);
+    expect(pp.sent.every((s) => s.requestId === batch.paypal_request_id)).toBe(true);
+    expect(batch.paypal_request_id).not.toBe(a.verdict!.paypalRequestId); // scoped to this database instance
     expect(pp.sent.map((s) => s.senderItemId)).toContain(`${EVENT_ID}:rcp_01`);
     expect(pipeline.ledger.poolBalanceCents()).toBe(5_000_00 - GOOD_PLAN_TOTAL_CENTS);
 
@@ -161,7 +162,7 @@ describe('pipeline: assess → approve → execute → poll', () => {
     pp.failNextCreate = { status: 503, body: { name: 'SERVICE_UNAVAILABLE' } };
     await expect(pipeline.execute(a.planId, pp.client, PAYEES)).rejects.toThrow(/503/);
     const batch = await pipeline.execute(a.planId, pp.client, PAYEES);
-    expect(batch.paypal_batch_id).toBe('FAKEBATCH1');
+    expect(batch.paypal_batch_id).toBe('SIMBATCH1');
     const posts = pp.requests.filter((r) => r.method === 'POST' && r.path === '/v1/payments/payouts');
     expect(new Set(posts.map((p) => p.requestId)).size).toBe(1);
     expect(pp.sent).toHaveLength(7);

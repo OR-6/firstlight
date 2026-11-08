@@ -1,0 +1,105 @@
+'use client';
+
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+
+/**
+ * Live updates: one EventSource per tab. Every audit append bumps `version`,
+ * and every useApi() hook refetches. `last` carries the latest audit type so
+ * screens can react to specific steps.
+ */
+type Live = { version: number; connected: boolean; last: { type: string; hash: string } | null; bump: () => void };
+const LiveContext = createContext<Live>({ version: 0, connected: false, last: null, bump: () => {} });
+
+export function LiveProvider({ children }: { children: React.ReactNode }) {
+  const [version, setVersion] = useState(0);
+  const [connected, setConnected] = useState(false);
+  const [last, setLast] = useState<Live['last']>(null);
+  const bump = useCallback(() => setVersion((v) => v + 1), []);
+
+  useEffect(() => {
+    let es: EventSource | null = null;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const open = () => {
+      es = new EventSource('/api/stream');
+      es.onopen = () => setConnected(true);
+      es.onmessage = (m) => {
+        try {
+          const ev = JSON.parse(m.data) as { kind: string; entry?: { type: string; hash: string } };
+          if (ev.entry) setLast({ type: ev.entry.type, hash: ev.entry.hash });
+        } catch {
+          /* ignore */
+        }
+        bump();
+      };
+      es.onerror = () => {
+        setConnected(false);
+        es?.close();
+        retry = setTimeout(open, 3000);
+      };
+    };
+    open();
+    return () => {
+      clearTimeout(retry);
+      es?.close();
+    };
+  }, [bump]);
+
+  return <LiveContext.Provider value={{ version, connected, last, bump }}>{children}</LiveContext.Provider>;
+}
+
+export const useLive = () => useContext(LiveContext);
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+export async function call<T>(url: string, init?: { method?: string; body?: unknown }): Promise<T> {
+  const res = await fetch(url, {
+    method: init?.method ?? (init?.body !== undefined ? 'POST' : 'GET'),
+    headers: init?.body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    cache: 'no-store',
+  });
+  const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+  if (!res.ok) throw new ApiError(res.status, data.error ?? 'ERROR', data.message ?? `Request failed (${res.status}).`);
+  return data as T;
+}
+
+/** GET a JSON endpoint and keep it fresh on every live event. */
+export function useApi<T>(url: string | null) {
+  const { version } = useLive();
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState<ApiError | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    if (!url) {
+      // The thing we were showing no longer exists (e.g. after a demo reset).
+      setData(null);
+      setError(null);
+      return;
+    }
+    try {
+      const d = await call<T>(url);
+      if (mine === seq.current) {
+        setData(d);
+        setError(null);
+      }
+    } catch (e) {
+      if (mine === seq.current) setError(e as ApiError);
+    }
+  }, [url]);
+
+  useEffect(() => {
+    void load();
+  }, [load, version]);
+
+  return { data, error, reload: load };
+}

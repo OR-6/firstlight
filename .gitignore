@@ -13,3 +13,7 @@ redteam-report.json
 config/payees.sandbox.json
 fixtures/llm/.recording/
 data/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+.claude/

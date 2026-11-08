@@ -29,10 +29,10 @@ export function loadReplayEvent(eventId: string, dir = 'fixtures/events'): Repla
   const m = ManifestSchema.parse(JSON.parse(readFileSync(join(dir, 'replay.json'), 'utf8')));
   const entry = m[eventId];
   if (!entry) throw new Error(`no replay fixture for ${eventId}`);
-  const detail = JSON.parse(readFileSync(join(dir, entry.usgs), 'utf8')) as unknown;
+  const detail = JSON.parse(readFileSync(join(/*turbopackIgnore: true*/ dir, entry.usgs), 'utf8')) as unknown;
   const parsed = parseUsgsFeature(detail);
   if (!parsed.ok) throw new Error(`replay fixture ${entry.usgs}: ${parsed.error}`);
-  const emsc = entry.emsc ? (JSON.parse(readFileSync(join(dir, entry.emsc), 'utf8')) as unknown) : null;
+  const emsc = entry.emsc ? (JSON.parse(readFileSync(join(/*turbopackIgnore: true*/ dir, entry.emsc), 'utf8')) as unknown) : null;
   return {
     event: parsed.value,
     corroboration: corroborationFrom(parsed.value, emsc),

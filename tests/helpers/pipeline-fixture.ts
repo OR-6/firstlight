@@ -2,7 +2,7 @@ import type { LlmRequest } from '../../src/llm/client';
 import { ScriptedLlm, text, toolUse, type ScriptStep } from '../../src/llm/scripted';
 import { defaultFirewallConfig } from '../../src/firewall/config';
 import { openDb } from '../../src/ledger/db';
-import { PAYPAL_SANDBOX_BASE_URL, PayPalClient, type FetchLike } from '../../src/paypal/client';
+import { simulatedPayPal, type SimulatedPayPal } from '../../src/redteam/fake-paypal';
 import { Pipeline } from '../../src/pipeline/pipeline';
 import { parsePayees } from '../../src/registry/payees';
 import { loadRegistry } from '../../src/registry/registry';
@@ -46,66 +46,9 @@ export function scriptedAgent(plan: unknown | ((req: LlmRequest) => unknown)): S
   return new ScriptedLlm(steps);
 }
 
-export type FakePayPal = {
-  client: PayPalClient;
-  /** Every payout item PayPal was asked to send, across all batches. */
-  sent: { receiver: string; value: string; senderItemId: string; requestId: string }[];
-  requests: { method: string; path: string; requestId?: string }[];
-  /** Override the next POST /payouts response. */
-  failNextCreate?: { status: number; body: unknown };
-};
-
-export function fakePayPal(finalItemStatus = 'SUCCESS'): FakePayPal {
-  const fake: FakePayPal = { client: null as unknown as PayPalClient, sent: [], requests: [] };
-  const batches = new Map<string, { requestId: string; items: { receiver: string; value: string; senderItemId: string }[]; polls: number }>();
-  const byRequestId = new Map<string, string>();
-  const reply = (status: number, body: unknown) => ({
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: (n: string) => (n.toLowerCase() === 'paypal-debug-id' ? 'fake-debug' : null) },
-    text: async () => JSON.stringify(body),
-  });
-  const impl: FetchLike = async (url, init) => {
-    const path = url.replace(PAYPAL_SANDBOX_BASE_URL, '');
-    const requestId = init.headers['PayPal-Request-Id'];
-    fake.requests.push({ method: init.method, path, requestId });
-    if (path === '/v1/oauth2/token') return reply(200, { access_token: 'fake', expires_in: 32400, scope: 'https://uri.paypal.com/payments/payouts' });
-    if (init.method === 'POST' && path === '/v1/payments/payouts') {
-      if (fake.failNextCreate) {
-        const f = fake.failNextCreate;
-        fake.failNextCreate = undefined;
-        return reply(f.status, f.body);
-      }
-      const existing = requestId ? byRequestId.get(requestId) : undefined;
-      if (existing) return reply(201, { batch_header: { payout_batch_id: existing, batch_status: 'PENDING' } });
-      const body = JSON.parse(init.body!) as { items: { receiver: string; amount: { value: string }; sender_item_id: string }[] };
-      const id = `FAKEBATCH${batches.size + 1}`;
-      const items = body.items.map((i) => ({ receiver: i.receiver, value: i.amount.value, senderItemId: i.sender_item_id }));
-      batches.set(id, { requestId: requestId ?? '', items, polls: 0 });
-      if (requestId) byRequestId.set(requestId, id);
-      for (const i of items) fake.sent.push({ ...i, requestId: requestId ?? '' });
-      return reply(201, { batch_header: { payout_batch_id: id, batch_status: 'PENDING' } });
-    }
-    const m = /^\/v1\/payments\/payouts\/(\w+)$/.exec(path);
-    if (init.method === 'GET' && m) {
-      const b = batches.get(m[1]!);
-      if (!b) return reply(404, { name: 'INVALID_RESOURCE_ID' });
-      b.polls++;
-      const done = b.polls >= 2;
-      return reply(200, {
-        batch_header: { payout_batch_id: m[1], batch_status: done ? 'SUCCESS' : 'PROCESSING' },
-        items: b.items.map((i, n) => ({
-          payout_item_id: `ITEM${n}`,
-          transaction_status: done ? finalItemStatus : 'PENDING',
-          payout_item: { receiver: i.receiver, sender_item_id: i.senderItemId, amount: { value: i.value, currency: 'USD' } },
-        })),
-      });
-    }
-    return reply(404, { name: 'NOT_FOUND' });
-  };
-  fake.client = new PayPalClient({ baseUrl: PAYPAL_SANDBOX_BASE_URL, clientId: 'x', clientSecret: 'y' }, impl);
-  return fake;
-}
+export type FakePayPal = SimulatedPayPal;
+/** Shared in-process PayPal simulator (records what would have been sent). */
+export const fakePayPal = simulatedPayPal;
 
 export function makePipeline(opts: { llm: ScriptedLlm; sentinelLlm?: ScriptedLlm | null; poolCents?: number; clock?: () => number }) {
   let now = NOW;

@@ -35,7 +35,14 @@ export class ReplayLlm implements LlmClient {
   }
 }
 
-/** Wraps a live client and saves every request/response pair as a fixture. */
+/**
+ * Wraps a live client and saves every request/response pair as a fixture.
+ *
+ * An identical request that is already recorded is served from the fixture,
+ * never re-asked: different runs often share a prefix (e.g. the first turn
+ * before any untrusted text is read), and overwriting it with a fresh,
+ * different answer would orphan every later turn recorded on top of it.
+ */
 export class RecordingLlm implements LlmClient {
   readonly mode = 'record' as const;
   constructor(
@@ -45,8 +52,10 @@ export class RecordingLlm implements LlmClient {
   ) {}
 
   async create(req: LlmRequest): Promise<LlmResponse> {
-    const response = await this.inner.create(req);
     const key = fixtureKey(req);
+    const existing = join(this.dir, `${key}.json`);
+    if (existsSync(existing)) return (JSON.parse(readFileSync(existing, 'utf8')) as Fixture).response;
+    const response = await this.inner.create(req);
     mkdirSync(this.dir, { recursive: true });
     const fx: Fixture = { key, model: req.model, recordedAt: new Date(this.clock()).toISOString(), request: req, response };
     writeFileSync(join(this.dir, `${key}.json`), JSON.stringify(fx, null, 2) + '\n');

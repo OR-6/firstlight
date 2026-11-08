@@ -1,5 +1,5 @@
 import { distanceKm } from '../geo';
-import { maxAllowedTier, tierAbove } from '../tiers';
+import { distanceBandTier, maxAllowedTier, tierAbove } from '../tiers';
 import type { FirewallContext, RegistryRecipient, RuleResult, Tier } from '../types';
 
 /**
@@ -15,6 +15,8 @@ export function r2TierBand(
   // Rounded to 1 m so band edges are not decided by floating-point noise.
   const d = Math.round(distanceKm(ctx.event.epicentre, recipient.home) * 1000) / 1000;
   const max = maxAllowedTier(d, recipient.flags, ctx.config);
+  const band = distanceBandTier(d, ctx.config);
+  const uplift = max !== null && band !== null && max !== band ? `band ${band}, +1 tier for ${recipient.flags.filter((f) => ctx.config.vulnerabilityUpliftFlags.includes(f)).join(', ').replaceAll('_', ' ')}` : null;
   const km = `${d.toFixed(1)} km`;
   if (max === null) {
     return {
@@ -38,7 +40,7 @@ export function r2TierBand(
         scope: 'item',
         status: 'warn',
         reasonCode: 'TIER_DOWNGRADED',
-        detail: `agent requested tier ${requestedTier}; ${km} allows at most ${max}`,
+        detail: `agent requested tier ${requestedTier}; ${km} allows at most ${max}${uplift ? ` (${uplift})` : ''}`,
       },
     };
   }
@@ -50,7 +52,7 @@ export function r2TierBand(
       scope: 'item',
       status: 'pass',
       reasonCode: 'TIER_WITHIN_BAND',
-      detail: `tier ${requestedTier} at ${km} (max ${max})`,
+      detail: `tier ${requestedTier} at ${km}; max ${max}${uplift ? ` (${uplift})` : ''}`,
     },
   };
 }
