@@ -167,6 +167,9 @@ function migrate(db: Db): void {
   `);
   addColumn(db, 'donations', 'allowance_id', 'TEXT');
   addColumn(db, 'donations', 'refunded_cents', 'INTEGER NOT NULL DEFAULT 0');
+  // Hash of the PayPal payer id that approved the donation / the one an allowance is tied to. Never the raw id, never public.
+  addColumn(db, 'donations', 'payer_hash', 'TEXT');
+  addColumn(db, 'allowances', 'payer_hash', 'TEXT');
   db.exec('CREATE INDEX IF NOT EXISTS donations_allowance ON donations(allowance_id)');
 }
 

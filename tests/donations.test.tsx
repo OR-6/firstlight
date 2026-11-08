@@ -82,9 +82,16 @@ function fakeOrders(opts: { captureCents?: number; failCreate?: boolean } = {}) 
       calls.capture.push(requestId);
       const prev = captured.get(orderId);
       if (prev) return prev; // PayPal-Request-Id idempotency
-      const r = { orderId, status: 'COMPLETED', captureId: `CAP${orderId.slice(5)}`, captureStatus: 'COMPLETED', amountCents: opts.captureCents ?? null };
+      const r = { orderId, status: 'COMPLETED', captureId: `CAP${orderId.slice(5)}`, captureStatus: 'COMPLETED', amountCents: opts.captureCents ?? null, payerId: 'PAYERTESTA1' };
       captured.set(orderId, r);
       return r;
+    },
+    async get(orderId) {
+      const c = captured.get(orderId);
+      return c ? { ...c, payerId: 'PAYERTESTA1' } : { orderId, status: 'APPROVED', payerId: 'PAYERTESTA1', captureId: null, captureStatus: null, amountCents: null };
+    },
+    async refund(input) {
+      return { refundId: `REF${input.requestId.slice(0, 10).toUpperCase()}`, status: 'COMPLETED', amountCents: input.amountCents };
     },
   };
   return { orders, calls };

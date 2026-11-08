@@ -203,10 +203,12 @@ describe('allowances in the donation service', () => {
   it('idempotency keys are scoped to the allowance, never leaking another allowance’s receipt', async () => {
     const { svc, allowance, fake } = donationSetup();
     const a = allowance('same-name', 50);
-    const b = allowance('same-name', 50);
     const first = await svc.create({ amount_usd: 5, allowance_token: a.allowanceToken, idempotency_key: 'key-12345678' }, 'agent');
     const replay = await svc.create({ amount_usd: 5, allowance_token: a.allowanceToken, idempotency_key: 'key-12345678' }, 'agent');
     expect(replay).toMatchObject({ receiptId: first.receiptId, replayed: true });
+    // The label is free again only once the first allowance is revoked (or expires).
+    svc.revokeAllowance(a.allowanceId, a.allowanceToken);
+    const b = allowance('same-name', 50);
     await expect(svc.create({ amount_usd: 5, allowance_token: b.allowanceToken, idempotency_key: 'key-12345678' }, 'agent')).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT', status: 409 });
     expect(fake.calls.create).toHaveLength(1);
   });
