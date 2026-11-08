@@ -1,0 +1,36 @@
+# Render blueprint for the hosted demo (SPEC §11). PayPal SANDBOX only.
+# Secrets are marked sync: false: Render asks for them when the blueprint is created.
+services:
+  - type: web
+    name: firstlight
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: PAYPAL_ENV
+        value: sandbox
+      - key: PAYPAL_MODE
+        value: sandbox
+      - key: DEMO_MODE
+        value: replay # recorded Claude runs; no Anthropic key needed on the server
+      # Free instances have no persistent disk: the demo database resets on restart or deploy.
+      - key: FIRSTLIGHT_DB
+        value: /tmp/firstlight.db
+      - key: EXECUTE_LIMIT_PER_HOUR
+        value: "6"
+      - key: APP_BASE_URL
+        sync: false # e.g. https://firstlight.onrender.com
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false # from npm run webhook:register after the first deploy
+      - key: PAYEES_JSON
+        sync: false # {"rcp_01":"sb-…@personal.example.com", …} sandbox personal accounts

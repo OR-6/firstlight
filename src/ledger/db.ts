@@ -113,6 +113,25 @@ function migrate(db: Db): void {
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     INSERT OR IGNORE INTO meta (key, value) VALUES ('instance_id', lower(hex(randomblob(8))));
 
+    -- Donations into the pool (SPEC §5.6 / §5.6b). donor_ref and message are untrusted
+    -- text: stored as data, escaped on display, never fed to the agent or sentinel.
+    CREATE TABLE IF NOT EXISTS donations (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id       TEXT NOT NULL UNIQUE,
+      source           TEXT NOT NULL CHECK (source IN ('human','agent')),
+      donor_ref        TEXT NOT NULL,
+      message          TEXT,
+      amount_cents     INTEGER NOT NULL CHECK (amount_cents > 0),
+      idempotency_key  TEXT,
+      order_id         TEXT UNIQUE,
+      approval_url     TEXT,
+      capture_id       TEXT UNIQUE,
+      status           TEXT NOT NULL,
+      created_ms       INTEGER NOT NULL,
+      captured_ms      INTEGER,
+      UNIQUE (donor_ref, idempotency_key)
+    );
+
     -- Verified PayPal webhook deliveries, de-duplicated on PayPal's event id.
     CREATE TABLE IF NOT EXISTS webhook_events (
       id            TEXT PRIMARY KEY,

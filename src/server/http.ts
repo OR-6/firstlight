@@ -2,6 +2,7 @@ import 'server-only';
 import { PayPalApiError } from '../paypal/client';
 import { PipelineError } from '../pipeline/pipeline';
 import { LlmFixtureMissingError } from '../llm/replay';
+import { DonationError } from '../donations/service';
 
 /** Consistent JSON responses and error mapping for the API routes. */
 export function json(body: unknown, status = 200): Response {
@@ -53,4 +54,15 @@ export async function readJson<T>(req: Request, max = 10_000): Promise<T> {
   const text = await req.text();
   if (text.length > max) throw new PipelineError('APPROVAL_INCOMPLETE', 'request too large');
   return (text ? JSON.parse(text) : {}) as T;
+}
+
+/** Public base URL: APP_BASE_URL when set (behind a proxy), else the request's own origin. */
+export function baseUrl(req: Request): string {
+  return process.env.APP_BASE_URL?.trim() || new URL(req.url).origin;
+}
+
+export function donationFail(err: unknown): Response {
+  if (err instanceof SyntaxError) return json({ error: 'INVALID_JSON', message: 'Send a JSON body.' }, 400);
+  if (err instanceof DonationError) return json({ error: err.code, message: err.message }, err.status);
+  return fail(err);
 }

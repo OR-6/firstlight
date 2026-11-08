@@ -117,3 +117,20 @@ a law: change it here and in code together. Newest first within each section.
 ### End-to-end check through the dashboard (2026-11-08)
 - Reset demo → Run assessment (replayed Claude Opus 5.5 run) → $680 plan needs approval → approved in the UI → "Send $680.00 in payouts" → PayPal sandbox batch `DZCFDP9FFEUV8` → all 7 items SUCCESS, shown live without reload → audit chain verified (15 entries).
 - The M2 database was backed up to `data/firstlight.m2-first-run.backup.db` before the reset.
+
+## Milestone 4 (2026-11-08)
+
+| # | Question | Decision |
+|---|---|---|
+| D51 | How to build Orders v2 | PayPal Server SDK (`@paypal/paypal-server-sdk` 2.5.0), with endpoint and model details from the APIMatic Context Plugin (ContextMatic): `createOrder` / `captureOrder` with `paypalRequestId`, `PaypalWalletExperienceContext` (PAY_NOW, NO_SHIPPING, return/cancel URLs). Approval link is `rel: payer-action` (falls back to `approve`). SDK logging off (it would log tokens). Payouts stay on plain fetch. |
+| D52 | Donation policy | Pure function like the firewall: $1–$100, ≤ 2 decimals, $200 per donor_ref per 24 h, ≤ 3 per donor per 10 min, ≤ 30 globally per 10 min, the third sub-$2 donation from a donor within an hour is blocked (card testing). Unknown fields rejected. `donor_ref` ≤ 64 chars of letters/digits/space and `._:@+-`; `message` ≤ 280 chars, control/invisible characters stripped. |
+| D53 | Crediting the pool | Only after capture. The return URL, the `PAYMENT.CAPTURE.COMPLETED` webhook and retries all go through one path; the ledger credit is unique per capture id; capture uses a fixed PayPal-Request-Id per receipt. Never credit more than the donor asked for (a larger capture is logged as a mismatch). |
+| D54 | Idempotent create_donation | Optional `idempotency_key`; the same key from the same donor returns the same receipt and approval link without a new order. |
+| D55 | Donor text | Stored as data, rendered as React text (never HTML), never passed to the agent or sentinel. Tested: an injection in a donation message leaves the agent's inputs and the payout plan unchanged; markup renders escaped. |
+| D56 | MCP transport | The MCP TypeScript SDK 1.32 ships `WebStandardStreamableHTTPServerTransport` (Request → Response), so `/mcp` runs inside a Next.js route: stateless, JSON responses, a fresh server per request. The spec's fallback (HTTP only) wasn't needed. |
+| D57 | Samaritan | Scripted, not an LLM, and labelled so. It reads the manifest, uses only MCP, donates min($5, allowance), prints the approval link for its human, waits up to 10 min, then verifies the receipt's audit hash. |
+| D58 | Hosting | Render blueprint (`render.yaml`): free web service, `npm run start`, health check `/api/health`, replay mode, secrets entered in Render. Free instances have no persistent disk, so the demo database lives in `/tmp` and resets on restart. |
+
+### Verified 2026-11-08
+- First Orders call: sandbox order `5NA53430PR501991F` (`PAYER_ACTION_REQUIRED`, approval on `www.sandbox.paypal.com/checkoutnow`).
+- Samaritan end to end: found the manifest, used MCP, created a $5 order, a person approved it on PayPal, the return URL captured it (capture `2M270176F8691393V`), the pool went $4,320 → $4,325, and Samaritan verified audit entry #18 in an intact chain.

@@ -21,6 +21,8 @@ export async function handlePayPalWebhook(input: {
   headers: { get(name: string): string | null };
   rawBody: string;
   now?: number;
+  /** PAYMENT.CAPTURE.COMPLETED for a donation order. */
+  onCaptureCompleted?: (orderId: string | undefined, captureId: string, amountCents: number | null) => unknown;
 }): Promise<WebhookOutcome> {
   const { pipeline, db } = input;
   const reject = (status: number, reason: string, extra: Record<string, unknown> = {}): WebhookOutcome => {
@@ -65,6 +67,12 @@ export async function handlePayPalWebhook(input: {
     }
     return { status: 200, body: { ok: true, ignored: 'unknown batch' } };
   }
-  // PAYMENT.CAPTURE.COMPLETED (donations) is handled in M4.
+  if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED' && input.onCaptureCompleted) {
+    const r = (event.resource ?? {}) as { id?: string; amount?: { value?: string }; supplementary_data?: { related_ids?: { order_id?: string } } };
+    if (r.id) {
+      const cents = r.amount?.value ? Math.round(Number(r.amount.value) * 100) : null;
+      input.onCaptureCompleted(r.supplementary_data?.related_ids?.order_id, r.id, Number.isFinite(cents) ? cents : null);
+    }
+  }
   return { status: 200, body: { ok: true } };
 }

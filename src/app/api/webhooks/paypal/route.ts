@@ -15,6 +15,7 @@ export async function POST(req: Request) {
       webhookId: process.env.PAYPAL_WEBHOOK_ID,
       headers: req.headers,
       rawBody: await req.text(),
+      onCaptureCompleted: (orderId, captureId, cents) => rt.donations.onCaptureCompleted(orderId, captureId, cents),
     });
     return Response.json(out.body, { status: out.status });
   } catch (err) {

@@ -9,6 +9,8 @@ import { openDb, type Db } from '../ledger/db';
 import type { LlmClient } from '../llm/client';
 import { selectLlm, type LlmMode } from '../llm/select';
 import { PayPalClient, loadPayPalConfig } from '../paypal/client';
+import { PayPalOrders, type DonationOrders } from '../paypal/orders';
+import { DonationService } from '../donations/service';
 import { Pipeline } from '../pipeline/pipeline';
 import { loadPayees, type PayeeMap } from '../registry/payees';
 import { loadRegistry, type RegistryProfile } from '../registry/registry';
@@ -33,6 +35,7 @@ export type Runtime = {
   paypal: () => PayPalClient;
   payees: () => PayeeMap;
   pollers: Map<number, NodeJS.Timeout>;
+  donations: DonationService;
 };
 
 const g = globalThis as unknown as { __firstlight?: Runtime; __firstlightBus?: EventEmitter };
@@ -63,7 +66,16 @@ function build(): Runtime {
 
   let paypal: PayPalClient | null = null;
   let payees: PayeeMap | null = null;
+  let orders: DonationOrders | null = null;
+  const donations = new DonationService({
+    db,
+    audit: pipeline.audit,
+    ledger: pipeline.ledger,
+    orders: () => (orders ??= new PayPalOrders()),
+    baseUrl: () => process.env.APP_BASE_URL?.trim() || 'http://localhost:3000',
+  });
   return {
+    donations,
     db,
     pipeline,
     registry,
