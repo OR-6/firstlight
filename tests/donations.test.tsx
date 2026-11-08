@@ -6,7 +6,6 @@ import { manifest } from '../src/agentapi/catalog';
 import { buildMcpServer } from '../src/agentapi/mcp';
 import { evaluateDonation, type RecentDonation } from '../src/donations/policy';
 import { DonationError, DonationService } from '../src/donations/service';
-import { openDb } from '../src/ledger/db';
 import type { CapturedOrder, DonationOrders } from '../src/paypal/orders';
 import { handlePayPalWebhook } from '../src/pipeline/webhooks';
 import { DonationFeed } from '../src/ui/DonationFeed';

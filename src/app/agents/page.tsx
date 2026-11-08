@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
+import { useBrowserValue } from '@/ui/browser';
 import { DonationFeed, refundFromConsole, type FeedItem } from '@/ui/DonationFeed';
 import { Notice } from '@/ui/format';
 import { ApiError, call, useApi } from '@/ui/live';
@@ -25,9 +26,7 @@ type AuditEntry = { seq: number; tsMs: number; type: string; payload: unknown; p
 
 /** The site's own origin once in the browser, so snippets work on a local copy too. */
 function useOrigin(): string {
-  const [origin, setOrigin] = useState(LIVE_ORIGIN);
-  useEffect(() => setOrigin(window.location.origin), []);
-  return origin;
+  return useBrowserValue(() => window.location.origin, LIVE_ORIGIN);
 }
 
 function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) {

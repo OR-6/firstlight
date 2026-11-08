@@ -1,13 +1,23 @@
 /** Sign marks shared by the live money's-path board and the static diagram on How it works. No client code. */
-export type State = 'done' | 'wait' | 'stop' | 'idle' | 'info';
+export type State = 'done' | 'wait' | 'stop' | 'idle' | 'info' | 'checkpoint';
 
 /**
  * Sign marks: done = white disc with check, waiting = yellow warning diamond
  * (reserved for "needs approval"), blocked = red octagon. `info` is a neutral
  * reading, such as an earthquake that has been reported but not yet assessed:
  * a white ring around a dot, filled with `color` (the PAGER colour) if given.
+ * `checkpoint` is a neutral place where fixed code checks the plan (How it
+ * works): a white square outline with two check lines, so it isn't read as
+ * "blocked".
  */
 export function Mark({ state, color }: { state: State; color?: string }) {
+  if (state === 'checkpoint')
+    return (
+      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0" aria-hidden>
+        <rect x="1.6" y="1.6" width="16.8" height="16.8" rx="2.5" fill="none" stroke="#fff" strokeWidth="2" />
+        <path d="M5.8 7.4h8.4M5.8 12.6h5.6" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
   if (state === 'info')
     return (
       <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0" aria-hidden>

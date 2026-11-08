@@ -38,8 +38,12 @@ export default function QuakeMap({
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const fitted = useRef(false);
+  // The latest onSelect, for marker click handlers that Leaflet keeps across renders.
+  // Updated after each commit, not during render.
   const select = useRef(onSelect);
-  select.current = onSelect;
+  useEffect(() => {
+    select.current = onSelect;
+  }, [onSelect]);
 
   // Create once per mount; destroy completely on cleanup.
   useEffect(() => {

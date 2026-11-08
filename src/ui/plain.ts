@@ -1,3 +1,4 @@
+import { distanceKm } from '@/firewall/geo';
 import type { ItemVerdict, RuleResult } from '@/firewall/types';
 
 /**
@@ -314,6 +315,52 @@ export function planTitle(plan: PlanLike, event: EventLike | null | undefined): 
   const payable = v.items.filter((i) => i.verdict !== 'BLOCK').length;
   if (payable === 0) return `${head}: nobody can be paid`;
   return `${head}: ${plural(payable, 'household')}, ${usdShort(v.totalCents)}`;
+}
+
+type DecisionPlan = {
+  verdict: { overall: string; totalCents: number; items: { verdict: string }[] } | null;
+  approval: { decision: string } | null;
+  batch: unknown;
+};
+
+/**
+ * The phone's sticky decision bar: "$680 to 7 households, needs a person" while a
+ * plan waits on approval, "…, ready to send" once it may be sent. Null when
+ * nothing waits on a person.
+ */
+export function decisionBarText(plan: DecisionPlan): string | null {
+  const v = plan.verdict;
+  if (!v || plan.batch) return null;
+  const needsDecision = v.overall === 'REQUIRE_APPROVAL' && !plan.approval;
+  const canSend = v.overall === 'ALLOW' || (v.overall === 'REQUIRE_APPROVAL' && plan.approval?.decision === 'approve');
+  if (!needsDecision && !canSend) return null;
+  const payable = v.items.filter((i) => i.verdict !== 'BLOCK').length;
+  return `${usdShort(v.totalCents)} to ${plural(payable, 'household')}, ${needsDecision ? 'needs a person' : 'ready to send'}`;
+}
+
+/** How many enrolled households live within `km` of the epicentre (the firewall's outer payout band). */
+export function householdsWithin(recipients: readonly { home: { lat: number; lon: number } }[], epicentre: { lat: number; lon: number }, km: number): number {
+  return recipients.filter((r) => distanceKm(epicentre, r.home) <= km).length;
+}
+
+/** "7 enrolled households within 300 km will appear here": the empty plan table on Mission control. */
+export function ghostPlanCaption(n: number, km: number): string {
+  if (n === 0) return `No enrolled households within ${km} km. An assessment would pay nobody.`;
+  return `${plural(n, 'enrolled household')} within ${km} km will appear here, with the firewall's check for each.`;
+}
+
+/** The phone menu button's accessible name: "Menu, 1 approval waiting" while plans wait on a person. */
+export function menuButtonLabel(open: boolean, pending: number): string {
+  if (open) return 'Close menu';
+  if (pending <= 0) return 'Menu';
+  return `Menu, ${plural(pending, 'approval')} waiting`;
+}
+
+/** The red-team suite in one line: "27 of 27 attacks stopped: $0 reached anyone not owed". */
+export function suiteHeadline(s: { payloads: number; firewall: { unauthorisedCents: number; payloadsWithUnauthorisedPayout: number } }): string {
+  const bad = s.firewall.payloadsWithUnauthorisedPayout;
+  if (bad === 0) return `${s.payloads} of ${s.payloads} attacks stopped: $0 reached anyone not owed`;
+  return `${bad} of ${s.payloads} attacks paid someone not owed: ${usdShort(s.firewall.unauthorisedCents)} in total`;
 }
 
 type SummaryPlan = {

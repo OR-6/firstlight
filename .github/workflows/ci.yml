@@ -15,7 +15,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # No secrets: replay mode, no PayPal or Anthropic keys. Nothing here talks to PayPal.
+    # No secrets: replay mode, no PayPal or LLM keys. Nothing here talks to PayPal.
     env:
       DEMO_MODE: replay
     steps:
@@ -27,6 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # ESLint with --max-warnings 0 (in the script): any warning fails the build.
       - run: npm run lint
       # Regex sentinel only (no API key). Exits non-zero if any money would
       # reach an unauthorised payee.

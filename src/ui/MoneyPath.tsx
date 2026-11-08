@@ -103,8 +103,11 @@ export function buildStops(event: EventView | null, plan: PlanView | null): Stop
     };
 
   const b = plan.batch;
+  const canSend = Boolean(v && v.overall !== 'BLOCK' && (v.overall === 'ALLOW' || plan.approval?.decision === 'approve'));
   const paypal: Stop = !b
-    ? { name: 'PayPal', state: 'idle', headline: 'Not sent', detail: '' }
+    ? canSend
+      ? { name: 'PayPal', state: 'wait', headline: 'Ready to send', detail: 'A person sends the batch', decide: true }
+      : { name: 'PayPal', state: 'idle', headline: 'Not sent', detail: '' }
     : {
         name: 'PayPal',
         state: b.status === 'SUCCESS' ? 'done' : b.status === 'FAILED' || b.status === 'DENIED' ? 'stop' : 'wait',
@@ -129,18 +132,42 @@ export function buildStops(event: EventView | null, plan: PlanView | null): Stop
 
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
-/** "Stage 4 of 7: Firewall, needs approval": the first stage that is not done yet. */
+/**
+ * The phone board's one-line summary. A stage a person can act on comes first
+ * ("Stage 5 of 7: waiting for a person"), since that is what the reader can do
+ * something about; otherwise the first stage that is not done yet
+ * ("Stage 4 of 7: Firewall, blocked").
+ */
 export function currentStage(stops: Stop[]): string {
+  const d = stops.findIndex((s) => s.decide);
+  if (d >= 0) return `Stage ${d + 1} of ${stops.length}: ${stops[d]!.name === 'PayPal' ? 'ready for a person to send' : 'waiting for a person'}`;
   const i = stops.findIndex((s) => s.state !== 'done' && s.state !== 'info');
   if (i < 0) return `All ${stops.length} stages done`;
   const s = stops[i]!;
   return `Stage ${i + 1} of ${stops.length}: ${s.name}, ${lowerFirst(s.headline)}`;
 }
 
-const audit = (s: Stop) => (s.hash && s.seq != null ? { href: `/audit#seq-${s.seq}`, title: `Audit entry ${s.seq}, hash ${s.hash}` } : null);
+/**
+ * Pacing for screen recordings (`?pace=slow` on Mission control): stages from
+ * `revealed` on are drawn as not run yet, so they can appear one by one.
+ * `null` shows every stage as it is.
+ */
+export function pacedStops(stops: Stop[], revealed: number | null): Stop[] {
+  if (revealed === null || revealed >= stops.length) return stops;
+  return stops.map((s, i) => (i < revealed ? s : { name: s.name, state: 'idle', headline: 'Not run', detail: '' }));
+}
+
+/** The audit link for a recorded stage. The entry number and hash are in the tooltip, not the label. */
+export function auditLink(s: Stop): { href: string; label: string; title: string; ariaLabel: string } | null {
+  if (!s.hash || s.seq == null) return null;
+  return { href: `/audit#seq-${s.seq}`, label: 'See in audit', title: `Audit entry ${s.seq}, hash ${s.hash}`, ariaLabel: `See in audit: ${s.name}, entry ${s.seq}` };
+}
 const linkCls = 'underline underline-offset-2 hover:text-white focus-visible:outline-white';
 
-/** "Go to the decision" on a stage that waits on a person; "Audit entry 12" on a recorded one. */
+/** While paced, a stage remounts when it is revealed, so its fade-in plays once. */
+const stageKey = (s: Stop, paced: boolean) => (paced ? `${s.name}:${s.state}` : s.name);
+
+/** "Go to the decision" on a stage that waits on a person; "See in audit" on a recorded one. */
 function StageLinks({ s, onDecide, className = '' }: { s: Stop; onDecide?: () => void; className?: string }) {
   if (s.decide && onDecide)
     return (
@@ -155,11 +182,11 @@ function StageLinks({ s, onDecide, className = '' }: { s: Stop; onDecide?: () =>
         Go to the decision
       </a>
     );
-  const a = audit(s);
+  const a = auditLink(s);
   if (!a) return null;
   return (
-    <Link href={a.href} className={`${className} text-white/75 ${linkCls}`} title={a.title}>
-      Audit entry {s.seq}
+    <Link href={a.href} className={`${className} text-white/75 ${linkCls}`} title={a.title} aria-label={a.ariaLabel}>
+      {a.label}
     </Link>
   );
 }
@@ -168,17 +195,17 @@ function StageLinks({ s, onDecide, className = '' }: { s: Stop; onDecide?: () =>
  * Drawn as a green guide sign: white lettering, white inset border, sign-shaped marks.
  * `onDecide` makes a stage that waits on a person link to the page's decision panel.
  */
-export function MoneyPath({ stops, onDecide }: { stops: Stop[]; onDecide?: () => void }) {
+export function MoneyPath({ stops, onDecide, paced = false }: { stops: Stop[]; onDecide?: () => void; paced?: boolean }) {
   return (
     <section aria-label="Path of this payment" className="rounded-[var(--radius-panel)] bg-allow p-[3px] text-white">
       <div className="rounded-[4px] border-2 border-white/90">
-        <PhonePath stops={stops} onDecide={onDecide} />
+        <PhonePath stops={stops} onDecide={onDecide} paced={paced} />
         <ol className="hidden auto-cols-[minmax(7.5rem,1fr)] grid-flow-col md:grid">
           {stops.map((s, i) => {
             const next = stops[i + 1];
             const reached = s.state !== 'idle';
             return (
-              <li key={s.name} className="relative min-w-0 px-3 pb-4 pt-4 lg:px-4">
+              <li key={stageKey(s, paced)} className={`relative min-w-0 px-3 pb-4 pt-4 lg:px-4 ${paced && reached ? 'fl-reveal' : ''}`}>
                 <div className="mb-2.5 flex h-5 items-center" aria-hidden>
                   <Mark state={s.state} color={s.color} />
                   {next ? (
@@ -213,7 +240,7 @@ export function MoneyPath({ stops, onDecide }: { stops: Stop[]; onDecide?: () =>
  * Below 768 px: a summary plate naming the current stage, then every stage as
  * a vertical list (mark and connector on the left), so nothing scrolls sideways.
  */
-function PhonePath({ stops, onDecide }: { stops: Stop[]; onDecide?: () => void }) {
+function PhonePath({ stops, onDecide, paced }: { stops: Stop[]; onDecide?: () => void; paced: boolean }) {
   return (
     <div className="md:hidden">
       <p className="border-b-2 border-white/90 px-4 py-2.5 text-[1rem] font-bold">{currentStage(stops)}</p>
@@ -221,9 +248,9 @@ function PhonePath({ stops, onDecide }: { stops: Stop[]; onDecide?: () => void }
         {stops.map((s, i) => {
           const last = i === stops.length - 1;
           const reached = s.state !== 'idle';
-          const links = Boolean(s.decide && onDecide) || audit(s) !== null;
+          const links = Boolean(s.decide && onDecide) || auditLink(s) !== null;
           return (
-            <li key={s.name} className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3">
+            <li key={stageKey(s, paced)} className={`grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 ${paced && reached ? 'fl-reveal' : ''}`}>
               <div className="flex flex-col items-center" aria-hidden>
                 <span className="pt-0.5">
                   <Mark state={s.state} color={s.color} />
