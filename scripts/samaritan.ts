@@ -18,6 +18,7 @@
  * server, not Samaritan, decides its donor name (the allowance label) and cap.
  */
 import { randomBytes } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { verifyChain, type PublicAuditEntry } from './verify-chain';
@@ -34,6 +35,23 @@ function result<T>(r: ToolResult): T {
   return (r.structuredContent ?? JSON.parse(r.content?.find((c) => c.type === 'text')?.text ?? '{}')) as T;
 }
 const cents = (usd: string) => Math.round(Number(usd) * 100);
+
+/**
+ * What Samaritan says about the relief events and the message it sends. With
+ * no active event (for example right after a demo reset, when the only event
+ * is still awaiting assessment) it still donates: the pool is shared and funds
+ * the next payout.
+ */
+export function donationPurpose(events: readonly { title: string; status: string }[]): { lines: string[]; message: string } {
+  const active = events.filter((e) => e.status !== 'awaiting_assessment');
+  if (active.length === 0) {
+    return {
+      lines: ['no relief event is active right now; donating to the pool anyway, because the pool funds the next payout'],
+      message: 'For the relief pool, toward the next payout',
+    };
+  }
+  return { lines: active.map((e) => `active: ${e.title} (${e.status.replaceAll('_', ' ')})`), message: `For ${active[0]!.title.split(' (')[0]}` };
+}
 
 async function main() {
   if (!TOKEN) {
@@ -71,12 +89,8 @@ async function main() {
     const pool = result<{ balanceUsd: string; recipientsReached: number }>((await client.callTool({ name: 'get_pool_status', arguments: {} })) as ToolResult);
     const { events } = result<{ events: { eventId: string; title: string; status: string }[] }>((await client.callTool({ name: 'list_active_events', arguments: {} })) as ToolResult);
     say(`pool holds $${pool.balanceUsd}; ${pool.recipientsReached} people paid so far`);
-    const active = events.filter((e) => e.status !== 'awaiting_assessment');
-    if (active.length === 0) {
-      say('no active relief event, so not donating');
-      return;
-    }
-    for (const e of active) say(`active: ${e.title} (${e.status.replaceAll('_', ' ')})`);
+    const plan = donationPurpose(events);
+    for (const line of plan.lines) say(line);
 
     const amountCents = Math.min(PREFERRED_GIFT_CENTS, cents(allowance.remainingUsd), manifest.donations.maxUsd * 100);
     if (amountCents < manifest.donations.minUsd * 100) {
@@ -90,7 +104,7 @@ async function main() {
         arguments: {
           amount_usd: amountCents / 100,
           allowance_token: TOKEN,
-          message: `For ${active[0]!.title.split(' (')[0]}`,
+          message: plan.message,
           idempotency_key: `sam-${randomBytes(6).toString('hex')}`,
         },
       })) as ToolResult,
@@ -162,7 +176,10 @@ async function main() {
   }
 }
 
-main().catch((e) => {
-  console.error(`samaritan: ${(e as Error).message}`);
-  process.exitCode = 1;
-});
+// Run only as a script (npm run samaritan), not when a test imports donationPurpose.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error(`samaritan: ${(e as Error).message}`);
+    process.exitCode = 1;
+  });
+}

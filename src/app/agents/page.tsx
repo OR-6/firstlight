@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { DonationFeed, refundFromConsole, type FeedItem } from '@/ui/DonationFeed';
 import { Notice } from '@/ui/format';
 import { ApiError, call, useApi } from '@/ui/live';
@@ -11,15 +11,53 @@ const LIVE_ORIGIN = 'https://firstlight.onrender.com';
 const PROSE = 'max-w-[64ch]';
 const WIDE = 'max-w-[1400px]';
 
-type Allowance = {
+type AllowanceView = {
   allowanceId: string;
-  allowanceToken: string;
   label: string;
-  status: string;
+  status: 'active' | 'revoked' | 'expired' | 'used_up';
   capUsd: string;
   remainingUsd: string;
   expiresAt: string;
 };
+type Allowance = AllowanceView & { allowanceToken: string; manageKey: string };
+
+/** Manage keys stay in this browser only, so the person can list and revoke their allowances later. */
+const KEYS_STORAGE = 'firstlight.allowanceManageKeys';
+
+function loadKeys(): string[] {
+  try {
+    const v = JSON.parse(window.localStorage.getItem(KEYS_STORAGE) ?? '[]') as unknown;
+    return Array.isArray(v) ? v.filter((k): k is string => typeof k === 'string' && /^alm_[A-Za-z0-9_-]{32}$/.test(k)).slice(-50) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveKeys(keys: string[]): void {
+  try {
+    window.localStorage.setItem(KEYS_STORAGE, JSON.stringify(keys.slice(-50)));
+  } catch {
+    // Private window or storage blocked: the key is still shown once, to copy.
+  }
+}
+
+/** The allowances behind the manage keys kept in this browser, newest first. */
+async function fetchMine(): Promise<{ ok: true; found: { key: string; a: AllowanceView }[] } | { ok: false; message: string }> {
+  const keys = loadKeys();
+  if (keys.length === 0) return { ok: true, found: [] };
+  try {
+    const { allowances } = await call<{ allowances: (AllowanceView | null)[] }>('/api/allowances/manage', { body: { manage_keys: keys } });
+    const found = keys.flatMap((key, i) => {
+      const a = allowances[i];
+      return a ? [{ key, a }] : [];
+    });
+    // Keys that match nothing (e.g. after a demo reset) are forgotten.
+    if (found.length !== keys.length) saveKeys(found.map((f) => f.key));
+    return { ok: true, found: found.reverse() };
+  } catch (err) {
+    return { ok: false, message: (err as ApiError).message };
+  }
+}
 
 type AuditEntry = { seq: number; tsMs: number; type: string; payload: unknown; prevHash: string; hash: string };
 
@@ -143,7 +181,11 @@ export default function AgentsPage() {
           {[
             ['Manifest', '/.well-known/firstlight.json', 'Limits, endpoints, the allowance rules, and the exact formula for checking the audit hash chain yourself.'],
             ['llms.txt', '/llms.txt', 'The same in plain text, for language models reading the site.'],
-            ['MCP server', '/mcp', 'Streamable HTTP, stateless. Five tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt. Only create_donation changes anything, and it only creates a PayPal order.'],
+            [
+              'MCP server',
+              '/mcp',
+              'Streamable HTTP, stateless. Six tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt and check_payout_plan, which runs any payout plan through the firewall as a dry run. Only create_donation changes anything, and it only creates a PayPal order.',
+            ],
           ].map(([name, path, what]) => (
             <div key={path} className="grid gap-1 px-4 py-3 sm:grid-cols-[9rem_1fr] sm:gap-4">
               <dt className="font-semibold">{name}</dt>
@@ -184,7 +226,7 @@ export default function AgentsPage() {
           code={`$ FIRSTLIGHT_URL=${LIVE_ORIGIN} FIRSTLIGHT_ALLOWANCE_TOKEN=alw_… npm run samaritan
 samaritan: reading ${LIVE_ORIGIN}/.well-known/firstlight.json
 samaritan: found Firstlight (sandbox). MCP at ${LIVE_ORIGIN}/mcp
-samaritan: tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt
+samaritan: tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt, check_payout_plan
 samaritan: allowance "samaritan-agent": $20.00 left of $20.00, active, expires 2026-11-09T14:00:00.000Z
 samaritan: pool holds $4320.00; 7 people paid so far
 samaritan: active: M 7.7 - 10 km WSW of Pitaloza Arriba, Panama (2026-10-09) (paid)
@@ -236,18 +278,38 @@ function AllowanceSection({ origin }: { origin: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<Allowance | null>(null);
-  const [revoked, setRevoked] = useState<string | null>(null);
+  const [mine, setMine] = useState<{ key: string; a: AllowanceView }[] | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
   const labelId = useId();
   const capId = useId();
   const expiryId = useId();
+
+  const show = useCallback((r: Awaited<ReturnType<typeof fetchMine>>) => {
+    if (r.ok) {
+      setMine(r.found);
+      setListError(null);
+    } else setListError(r.message);
+  }, []);
+  const refresh = async () => show(await fetchMine());
+  useEffect(() => {
+    let live = true;
+    fetchMine().then((r) => live && show(r));
+    return () => {
+      live = false;
+    };
+  }, [show]);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    setRevoked(null);
     try {
-      setCreated(await call<Allowance>('/api/allowances', { body: { label: label.trim(), cap_usd: cap === '' ? 0 : cap, expires_in_hours: hours } }));
+      // A fresh single-use nonce from this site, then the allowance: only this page can create one.
+      const { nonce } = await call<{ nonce: string }>('/api/allowances/nonce');
+      const a = await call<Allowance>('/api/allowances', { body: { label: label.trim(), cap_usd: cap === '' ? 0 : cap, expires_in_hours: hours, nonce } });
+      saveKeys([...loadKeys(), a.manageKey]);
+      setCreated(a);
+      await refresh();
     } catch (err) {
       setError((err as ApiError).message);
     } finally {
@@ -255,15 +317,14 @@ function AllowanceSection({ origin }: { origin: string }) {
     }
   };
 
-  const revoke = async () => {
-    if (!created) return;
+  const revoke = async (allowanceId: string, manageKey: string) => {
     setBusy(true);
-    setError(null);
+    setListError(null);
     try {
-      await call(`/api/allowances/${created.allowanceId}/revoke`, { body: { allowance_token: created.allowanceToken } });
-      setRevoked(created.allowanceId);
+      await call(`/api/allowances/${allowanceId}/revoke`, { body: { manage_key: manageKey } });
+      await refresh();
     } catch (err) {
-      setError((err as ApiError).message);
+      setListError((err as ApiError).message);
     } finally {
       setBusy(false);
     }
@@ -276,8 +337,9 @@ function AllowanceSection({ origin }: { origin: string }) {
           Give an agent an allowance
         </h2>
         <p className="mt-1 text-ink-muted">
-          The label is the name the agent&apos;s donations appear under; the agent can&apos;t choose another. The server refuses anything over what is left, after the expiry, or after you revoke it. In this demo anyone can create one; a real
-          deployment would have the person sign in first so the allowance belongs to a verified account.
+          The label is the name the agent&apos;s donations appear under; the agent can&apos;t choose another. The server refuses anything over what is left, after the expiry, or after you revoke it. Allowances are created only from this
+          form, so an agent reading the docs can&apos;t grant itself one. You get two keys: a token for the agent, and a manage key for you that lists and revokes the allowance. This demo has no sign-in; a real deployment would tie each
+          allowance to a verified account.
         </p>
       </div>
 
@@ -330,17 +392,100 @@ function AllowanceSection({ origin }: { origin: string }) {
           </div>
         </div>
         <button className="btn btn-go h-10 px-5" disabled={busy || cap === '' || !label.trim()}>
-          {busy && !created ? 'Creating…' : 'Create allowance'}
+          {busy ? 'Working…' : 'Create allowance'}
         </button>
         {error ? <Notice tone="error">{error}</Notice> : null}
       </form>
 
-      {created ? <CreatedAllowance a={created} origin={origin} revoked={revoked === created.allowanceId} onRevoke={revoke} busy={busy} /> : null}
+      {created ? <CreatedAllowance a={created} origin={origin} /> : null}
+
+      <YourAllowances items={mine} error={listError} busy={busy} onRevoke={revoke} />
     </section>
   );
 }
 
-function CreatedAllowance({ a, origin, revoked, onRevoke, busy }: { a: Allowance; origin: string; revoked: boolean; onRevoke: () => void; busy: boolean }) {
+const STATUS_TEXT: Record<AllowanceView['status'], string> = { active: 'Active', revoked: 'Revoked', expired: 'Expired', used_up: 'Used up' };
+
+function YourAllowances({
+  items,
+  error,
+  busy,
+  onRevoke,
+}: {
+  items: { key: string; a: AllowanceView }[] | null;
+  error: string | null;
+  busy: boolean;
+  onRevoke: (allowanceId: string, manageKey: string) => void;
+}) {
+  const when = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (
+    <section className={`panel ${WIDE} overflow-hidden`} aria-labelledby="your-allowances">
+      <div className="border-b border-line-soft px-5 py-4">
+        <h3 id="your-allowances" className="text-[1.05rem] font-bold">
+          Your allowances
+        </h3>
+        <p className={`${PROSE} text-[0.92rem] text-ink-muted`}>The ones created in this browser. Their manage keys are kept only here; clearing your browser data forgets them.</p>
+      </div>
+      {error ? (
+        <div className="px-5 pt-4">
+          <Notice tone="error">{error}</Notice>
+        </div>
+      ) : null}
+      {items === null ? (
+        <p className="p-5 text-ink-muted">Loading…</p>
+      ) : items.length === 0 ? (
+        <p className="p-5 text-ink-muted">None yet. Allowances you create here are listed with a Revoke button.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-[0.875rem]">
+            <thead className="bg-raised text-left text-ink-muted">
+              <tr>
+                <th scope="col" className="px-5 py-2 font-semibold">
+                  Label
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-semibold">
+                  Cap
+                </th>
+                <th scope="col" className="px-3 py-2 text-right font-semibold">
+                  Left
+                </th>
+                <th scope="col" className="px-3 py-2 font-semibold">
+                  Expires
+                </th>
+                <th scope="col" className="px-3 py-2 font-semibold">
+                  Status
+                </th>
+                <th scope="col" className="px-5 py-2">
+                  <span className="sr-only">Action</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-line-soft">
+              {items.map(({ key, a }) => (
+                <tr key={a.allowanceId}>
+                  <td className="min-w-[10rem] px-5 py-2 break-words">{a.label}</td>
+                  <td className="num px-3 py-2 text-right">${a.capUsd}</td>
+                  <td className="num px-3 py-2 text-right">${a.remainingUsd}</td>
+                  <td className="num px-3 py-2 whitespace-nowrap">{when(a.expiresAt)}</td>
+                  <td className="px-3 py-2">{STATUS_TEXT[a.status]}</td>
+                  <td className="px-5 py-2 text-right">
+                    {a.status === 'revoked' || a.status === 'expired' ? null : (
+                      <button type="button" className="btn btn-stop h-8" disabled={busy} onClick={() => onRevoke(a.allowanceId, key)}>
+                        Revoke<span className="sr-only"> {a.label}</span>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CreatedAllowance({ a, origin }: { a: Allowance; origin: string }) {
   const expires = new Date(a.expiresAt).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const mcpArgs = JSON.stringify({ amount_usd: 5, allowance_token: a.allowanceToken, message: 'For the Panama earthquake' }, null, 2);
   const httpDonate = `curl -s ${origin}/api/agent/donations \\
@@ -348,15 +493,11 @@ function CreatedAllowance({ a, origin, revoked, onRevoke, busy }: { a: Allowance
   -d '{"amount_usd": 5, "allowance_token": "${a.allowanceToken}"}'`;
   const revokeCurl = `curl -s -X POST ${origin}/api/allowances/${a.allowanceId}/revoke \\
   -H 'Content-Type: application/json' \\
-  -d '{"allowance_token": "${a.allowanceToken}"}'`;
+  -d '{"manage_key": "${a.manageKey}"}'`;
 
   return (
     <div className={`panel ${WIDE} space-y-4 p-5`} aria-live="polite">
-      {revoked ? (
-        <Notice>This allowance is revoked. The agent can&apos;t donate with it any more, and donations still waiting for approval under it were cancelled.</Notice>
-      ) : (
-        <Notice tone="ok">Allowance created. Copy the token now: it is shown once, and Firstlight keeps only a hash of it.</Notice>
-      )}
+      <Notice tone="ok">Allowance created. Copy the token for your agent now: it is shown once, and Firstlight keeps only a hash of it.</Notice>
       <dl className="num grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.92rem] [&_dd]:break-all">
         <dt className="text-ink-muted">Label</dt>
         <dd>{a.label}</dd>
@@ -371,13 +512,10 @@ function CreatedAllowance({ a, origin, revoked, onRevoke, busy }: { a: Allowance
       <Snippet caption="Tell an MCP agent to call create_donation with" code={mcpArgs} />
       <Snippet caption="Or run Samaritan from a clone of the repository" code={`FIRSTLIGHT_URL=${origin} FIRSTLIGHT_ALLOWANCE_TOKEN=${a.allowanceToken} npm run samaritan`} />
       <Snippet caption="Or over plain HTTP" code={httpDonate} />
-      <div className="flex flex-wrap items-center gap-3 border-t border-line-soft pt-4">
-        <button type="button" className="btn btn-stop" onClick={onRevoke} disabled={busy || revoked}>
-          {revoked ? 'Revoked' : 'Revoke this allowance'}
-        </button>
-        <p className="text-[0.85rem] text-ink-dim">Revoking needs both the id and the token, so nobody who only sees the public audit log can revoke it.</p>
+      <div className="space-y-3 border-t border-line-soft pt-4">
+        <Snippet caption="Your manage key. Keep it to yourself: it lists and revokes this allowance, and the agent's token can't. This browser keeps a copy for the list below." code={a.manageKey} />
+        <Snippet caption="Revoke from a terminal" code={revokeCurl} />
       </div>
-      <Snippet caption="Revoke later from a terminal" code={revokeCurl} />
     </div>
   );
 }
