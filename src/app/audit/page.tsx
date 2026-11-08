@@ -25,6 +25,11 @@ const LABEL: Record<string, string> = {
   'donation.failed': 'Donation failed at PayPal',
   'donation.canceled': 'Donation cancelled by the donor',
   'donation.capture_pending': 'Donation approved, capture pending',
+  'donation.refunded': 'Donation refunded to the donor (taken out of the pool)',
+  'donation.reversed': 'Donation reversed by PayPal (taken out of the pool)',
+  'donation.denied': 'Donation capture denied by PayPal',
+  'allowance.created': 'Agent allowance created by a person',
+  'allowance.revoked': 'Agent allowance revoked',
 };
 
 type Check = { ok: true; count: number; headHash: string } | { ok: false; count: number; brokenAtSeq: number; reason: string };
