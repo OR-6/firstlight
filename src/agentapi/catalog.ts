@@ -96,8 +96,8 @@ export function manifest(baseUrl: string) {
     allowances: {
       what: 'A person lets one agent donate up to a cap until an expiry. The server enforces the label, the cap and the expiry; each payment is still approved by a person on PayPal.',
       createPage: `${b}/agents`,
-      create: { method: 'POST', url: `${b}/api/allowances`, body: { label: 'who the agent is, up to 64 characters', cap_usd: `${ALLOWANCE_LIMITS.minCapUsd} to ${ALLOWANCE_LIMITS.maxCapUsd}`, expires_in_hours: `${ALLOWANCE_LIMITS.minHours} to ${ALLOWANCE_LIMITS.maxHours}` } },
-      revoke: { method: 'POST', url: `${b}/api/allowances/{allowanceId}/revoke`, body: { allowance_token: 'alw_…' }, note: 'Needs the token as well as the id. Donations still waiting for approval are cancelled.' },
+      create: `A person creates the allowance on ${b}/agents (label up to 64 characters, cap $${ALLOWANCE_LIMITS.minCapUsd} to $${ALLOWANCE_LIMITS.maxCapUsd}, expiry ${ALLOWANCE_LIMITS.minHours} hour to ${ALLOWANCE_LIMITS.maxHours / 24} days) and gives you its alw_… token. Agents cannot create one: there is no agent API for it.`,
+      revoke: `Only the person can revoke it, on ${b}/agents, with the manage key (alm_…) they got when creating it. Your alw_… token cannot revoke it. Donations still waiting for approval are cancelled.`,
       check: { method: 'POST', url: `${b}/api/agent/allowance`, body: { allowance_token: 'alw_…' } },
       remaining: 'cap minus donations under it that are being created, waiting for approval, pending at PayPal or received (refunded, denied, held, cancelled and failed ones do not count)',
       label: 'Unique among allowances that are not revoked or expired, compared without case (LABEL_TAKEN otherwise).',
@@ -115,7 +115,16 @@ export function manifest(baseUrl: string) {
       auditEntries: { method: 'GET', url: `${b}/api/audit?limit=1000` },
       verifyAudit: { method: 'GET', url: `${b}/api/audit/verify?upTo={hash}` },
     },
-    mcpTools: ['get_pool_status', 'list_active_events', 'get_allowance', 'create_donation', 'get_receipt'],
+    mcpTools: ['get_pool_status', 'list_active_events', 'get_allowance', 'create_donation', 'get_receipt', 'check_payout_plan'],
+    payoutFirewall: {
+      what: 'Dry-run any payout plan against the firewall before sending anything to PayPal.',
+      tool: 'check_payout_plan',
+      input:
+        '{eventId, decision: trigger | hold | escalate, rationale, items: [{recipientId, tier: A | B | C, note, why}], exceptionRequests: [{recipientId, reason}]}: the same shape the internal payout agent submits. Plans carry tiers, never amounts or payee addresses.',
+      output: 'overall (ALLOW, REQUIRE_APPROVAL or BLOCK), each item with its verdict and the amount the firewall computes, rule findings in plain words, and coverage (R12: households owed and the shortfall).',
+      against: 'the live registry, the pool ledger as it is now, and the stored earthquake with the corroboration from its latest assessment',
+      sideEffects: 'None: no money moves, nothing is stored or logged. Rate-limited across all callers.',
+    },
     receiptFormat: {
       receiptId: 'rcpt_ followed by 16 hex characters',
       status: RECEIPT_STATUSES,
@@ -150,8 +159,9 @@ Donor agents can fund the relief pool, but only under an allowance a person gave
 
 ## For agents
 - Manifest: ${b}/.well-known/firstlight.json
-- MCP (Streamable HTTP): ${b}/mcp. Tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt
-- Allowance: a person creates one for you at ${b}/agents (label, cap $1 to $100, expiry 1 hour to 7 days) and gives you its alw_… token
+- MCP (Streamable HTTP): ${b}/mcp. Tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt, check_payout_plan
+- Allowance: a person creates one for you at ${b}/agents (label, cap $1 to $100, expiry 1 hour to 7 days) and gives you its alw_… token. You can't create or revoke one yourself; the person keeps a separate manage key for that
+- Payout firewall: MCP check_payout_plan. Dry-run any payout plan against the firewall before sending anything to PayPal. Same plan shape as the internal agent (eventId, decision, rationale, items [{recipientId, tier, note, why}], exceptionRequests); returns the verdict, the amounts the firewall computes, findings in plain words and the coverage shortfall. Nothing moves and nothing is stored
 - Pool status: GET ${b}/api/pool
 - Active relief events: GET ${b}/api/events/active
 - Check your allowance: POST ${b}/api/agent/allowance {"allowance_token": "alw_…"}

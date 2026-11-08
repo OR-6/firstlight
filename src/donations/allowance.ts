@@ -6,14 +6,19 @@ import { DonationRequestSchema } from './policy';
  * donation policy: the service hands in the stored allowance and the
  * donations already made under it, and gets a decision back.
  *
- * A person creates an allowance for one agent: a label (who the agent is),
- * a cap in USD and an expiry. The agent gets a bearer token (`alw_…`) and
- * must send it with every donation. The server, not the agent, decides what
- * the donor_ref is (the label) and how much is left. Each payment is still
- * approved by a person on PayPal.
+ * A person creates an allowance for one agent at /agents: a label (who the
+ * agent is), a cap in USD and an expiry. The agent gets a bearer token
+ * (`alw_…`) and must send it with every donation. The person keeps a separate
+ * manage key (`alm_…`) that lists and revokes the allowance; the agent's token
+ * can't. The server, not the agent, decides what the donor_ref is (the label)
+ * and how much is left. Each payment is still approved by a person on PayPal.
  */
 export const ALLOWANCE_TOKEN_PATTERN = '^alw_[A-Za-z0-9_-]{32}$';
 export const ALLOWANCE_TOKEN_RE = new RegExp(ALLOWANCE_TOKEN_PATTERN);
+/** The person's key for an allowance: lists and revokes it. Never given to the agent. */
+export const MANAGE_KEY_RE = /^alm_[A-Za-z0-9_-]{32}$/;
+/** At most this many manage keys in one "Your allowances" lookup. */
+export const MAX_MANAGE_KEYS = 50;
 export const ALLOWANCE_ID_RE = /^alid_[0-9a-f]{16}$/;
 
 export const ALLOWANCE_LIMITS = {
@@ -95,7 +100,7 @@ export function parseAgentDonation(raw: unknown): AgentDonationParse {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, code: 'INVALID_REQUEST', message: 'request: send a JSON object' };
   const obj = raw as Record<string, unknown>;
   if (obj.allowance_token === undefined) {
-    return { ok: false, code: 'ALLOWANCE_REQUIRED', message: 'allowance_token is required. A person creates one for you at /agents (or POST /api/allowances).' };
+    return { ok: false, code: 'ALLOWANCE_REQUIRED', message: 'allowance_token is required. A person creates one for you at /agents.' };
   }
   const parsed = AgentDonationRequestSchema.safeParse(raw);
   if (!parsed.success) {
@@ -151,7 +156,7 @@ export function checkAllowance(
 ): { ok: true; remainingAfterCents: number } | { ok: false; code: AllowanceRejection; message: string; remainingCents: number } {
   if (!a) return { ok: false, code: 'ALLOWANCE_UNKNOWN', message: 'That allowance_token is not valid. Ask your person for a new one at /agents.', remainingCents: 0 };
   const remaining = Math.max(0, a.capCents - committedCents(ctx.donations));
-  if (a.revokedMs !== null) return { ok: false, code: 'ALLOWANCE_REVOKED', message: 'This allowance was revoked by the person who created it.', remainingCents: 0 };
+  if (a.revokedMs !== null) return { ok: false, code: 'ALLOWANCE_REVOKED', message: 'This allowance was revoked by the person who holds its manage key.', remainingCents: 0 };
   if (ctx.now >= a.expiresMs) return { ok: false, code: 'ALLOWANCE_EXPIRED', message: `This allowance expired at ${new Date(a.expiresMs).toISOString()}.`, remainingCents: 0 };
   if (amountCents > remaining) {
     return {

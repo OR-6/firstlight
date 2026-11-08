@@ -236,7 +236,7 @@ describe('donor text is data, never instructions', () => {
 describe('MCP server for donor agents', () => {
   async function connect() {
     const ctx = setup();
-    const server = buildMcpServer({ db: ctx.db, donations: ctx.svc });
+    const server = buildMcpServer({ db: ctx.db, donations: ctx.svc, pipeline: ctx.pipeline });
     const [a, b] = InMemoryTransport.createLinkedPair();
     await server.connect(a);
     const client = new Client({ name: 'test-agent', version: '1' });
@@ -245,10 +245,11 @@ describe('MCP server for donor agents', () => {
   }
   const text = (r: unknown) => JSON.parse(((r as { content: { text: string }[] }).content[0]!.text)) as Record<string, unknown>;
 
-  it('exposes exactly the five documented tools', async () => {
+  it('exposes exactly the six documented tools', async () => {
     const { client } = await connect();
-    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(['create_donation', 'get_allowance', 'get_pool_status', 'get_receipt', 'list_active_events']);
-    expect(manifest('https://firstlight.test').mcpTools.slice().sort()).toEqual(['create_donation', 'get_allowance', 'get_pool_status', 'get_receipt', 'list_active_events']);
+    const six = ['check_payout_plan', 'create_donation', 'get_allowance', 'get_pool_status', 'get_receipt', 'list_active_events'];
+    expect((await client.listTools()).tools.map((t) => t.name).sort()).toEqual(six);
+    expect(manifest('https://firstlight.test').mcpTools.slice().sort()).toEqual(six);
   });
 
   it('create_donation only creates an order and returns an approval link', async () => {

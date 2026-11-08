@@ -14,10 +14,17 @@ function webhookBudget(now = Date.now(), perMinute = 60): boolean {
   return true;
 }
 
+/** Every real PayPal delivery carries these; without them a request can't be verified, so it isn't counted or verified. */
+const TRANSMISSION_HEADERS = ['paypal-transmission-id', 'paypal-transmission-time', 'paypal-transmission-sig'] as const;
+
 /** PayPal sandbox webhook receiver. Register this URL on the sandbox app (SPEC §5.7). */
 export async function POST(req: Request) {
-  const rt = firstlight();
   if (Number(req.headers.get('content-length') ?? 0) > 256_000) return Response.json({ error: 'BODY_TOO_LARGE' }, { status: 413 });
+  // Checked before the budget, so a flood of unsigned junk can't use up the minute's budget and crowd out real deliveries.
+  if (TRANSMISSION_HEADERS.some((h) => !req.headers.get(h)?.trim())) {
+    return Response.json({ error: 'MISSING_SIGNATURE_HEADERS', message: 'Not a PayPal webhook delivery: paypal-transmission-id, -time and -sig are required.' }, { status: 400 });
+  }
+  const rt = firstlight();
   try {
     // At most a burst of deliveries per minute go on to PayPal verification; junk floods stop here.
     if (!webhookBudget()) return Response.json({ error: 'RATE_LIMITED' }, { status: 429 });

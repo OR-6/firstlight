@@ -11,7 +11,7 @@ import { donationSetup } from './helpers/donation-fixture';
 
 async function connect() {
   const ctx = donationSetup();
-  const server = buildMcpServer({ db: ctx.db, donations: ctx.svc });
+  const server = buildMcpServer({ db: ctx.db, donations: ctx.svc, pipeline: ctx.pipeline });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await server.connect(a);
   const client = new Client({ name: 'contract-test', version: '1' });
@@ -41,7 +41,8 @@ describe('MCP contract', () => {
     for (const t of tools) {
       expect(t.outputSchema, t.name).toBeDefined();
       for (const k of Object.keys((t.inputSchema as JsonSchema).properties ?? {})) {
-        if (!(t.name === 'get_receipt' && k === 'receiptId')) expect(k, `${t.name}.${k}`).toMatch(/^[a-z]+(_[a-z]+)*$/);
+        // check_payout_plan takes the internal agent's plan verbatim (eventId, exceptionRequests), so a plan can be pasted as is.
+        if (!(t.name === 'get_receipt' && k === 'receiptId') && t.name !== 'check_payout_plan') expect(k, `${t.name}.${k}`).toMatch(/^[a-z]+(_[a-z]+)*$/);
       }
     }
     const token = allowance('contract-agent', 30).allowanceToken;
@@ -78,7 +79,7 @@ describe('MCP contract', () => {
 describe('MCP over Streamable HTTP (the /agents curl snippets)', () => {
   async function post(body: unknown) {
     const ctx = donationSetup();
-    const server = buildMcpServer({ db: ctx.db, donations: ctx.svc });
+    const server = buildMcpServer({ db: ctx.db, donations: ctx.svc, pipeline: ctx.pipeline });
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     await server.connect(transport);
     const res = await transport.handleRequest(

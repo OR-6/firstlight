@@ -12,6 +12,7 @@ import { DNOW, donationSetup } from './helpers/donation-fixture';
 
 const HOUR = 3_600_000;
 const TOKEN = `alw_${'A'.repeat(32)}`;
+const MANAGE = `alm_${'A'.repeat(32)}`;
 
 // ── pure: creating an allowance ────────────────────────────────────────────
 
@@ -170,20 +171,23 @@ describe('allowances in the donation service', () => {
     expect(svc.allowanceForToken(t)?.status).toBe('expired');
   });
 
-  it('revoking needs the id and the token, cancels waiting donations, and stops new ones', async () => {
+  it('revoking needs the id and the person’s manage key, cancels waiting donations, and stops new ones', async () => {
     const { svc, allowance, pipeline } = donationSetup();
     const a = allowance('revocable', 50);
     const other = allowance('someone-else', 50);
     const waiting = await svc.create({ amount_usd: 5, allowance_token: a.allowanceToken }, 'agent');
 
-    // A stranger who saw the id in the public audit log, with no token or the wrong one:
+    // A stranger who saw the id in the public audit log, with no key or the wrong one:
     expect(() => svc.revokeAllowance(a.allowanceId, undefined)).toThrow(DonationError);
-    expect(() => svc.revokeAllowance(a.allowanceId, TOKEN)).toThrow(/No allowance with that id and token/);
-    expect(() => svc.revokeAllowance(a.allowanceId, other.allowanceToken)).toThrow(/No allowance with that id and token/);
-    expect(() => svc.revokeAllowance('alid_ffffffffffffffff', a.allowanceToken)).toThrow(/No allowance with that id and token/);
+    expect(() => svc.revokeAllowance(a.allowanceId, MANAGE)).toThrow(/No allowance with that id and manage key/);
+    expect(() => svc.revokeAllowance(a.allowanceId, other.manageKey)).toThrow(/No allowance with that id and manage key/);
+    expect(() => svc.revokeAllowance('alid_ffffffffffffffff', a.manageKey)).toThrow(/No allowance with that id and manage key/);
+    // The agent itself can't revoke what its person set up: its token is not the manage key.
+    expect(() => svc.revokeAllowance(a.allowanceId, a.allowanceToken)).toThrow(expect.objectContaining({ code: 'MANAGE_KEY_REQUIRED', status: 403 }));
+    expect(() => svc.revokeAllowance(a.allowanceId, TOKEN)).toThrow(expect.objectContaining({ code: 'MANAGE_KEY_REQUIRED' }));
     expect(svc.allowanceForToken(a.allowanceToken)?.status).toBe('active');
 
-    const v = svc.revokeAllowance(a.allowanceId, a.allowanceToken);
+    const v = svc.revokeAllowance(a.allowanceId, a.manageKey);
     expect(v).toMatchObject({ status: 'revoked', remainingUsd: '0.00' });
     expect(svc.get(waiting.receiptId)?.status).toBe('CANCELED');
     await expect(svc.capture(waiting.receiptId)).rejects.toMatchObject({ code: 'NOT_CAPTURABLE' });
@@ -194,7 +198,7 @@ describe('allowances in the donation service', () => {
     expect(JSON.stringify(revoked[0])).not.toContain(a.allowanceToken);
 
     // Revoking twice is harmless and writes nothing more.
-    svc.revokeAllowance(a.allowanceId, a.allowanceToken);
+    svc.revokeAllowance(a.allowanceId, a.manageKey);
     expect(pipeline.audit.entries().filter((e) => e.type === 'allowance.revoked')).toHaveLength(1);
     // The other allowance is untouched.
     expect(svc.allowanceForToken(other.allowanceToken)?.status).toBe('active');
@@ -207,7 +211,7 @@ describe('allowances in the donation service', () => {
     const replay = await svc.create({ amount_usd: 5, allowance_token: a.allowanceToken, idempotency_key: 'key-12345678' }, 'agent');
     expect(replay).toMatchObject({ receiptId: first.receiptId, replayed: true });
     // The label is free again only once the first allowance is revoked (or expires).
-    svc.revokeAllowance(a.allowanceId, a.allowanceToken);
+    svc.revokeAllowance(a.allowanceId, a.manageKey);
     const b = allowance('same-name', 50);
     await expect(svc.create({ amount_usd: 5, allowance_token: b.allowanceToken, idempotency_key: 'key-12345678' }, 'agent')).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT', status: 409 });
     expect(fake.calls.create).toHaveLength(1);

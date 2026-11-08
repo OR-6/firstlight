@@ -24,7 +24,7 @@ export async function POST(req: Request): Promise<Response> {
     return withCors(Response.json({ jsonrpc: '2.0', error: { code: -32600, message: 'Request too large' }, id: null }, { status: 413 }));
   }
   const rt = firstlight();
-  const server = buildMcpServer({ db: rt.db, donations: rt.donations });
+  const server = buildMcpServer({ db: rt.db, donations: rt.donations, pipeline: rt.pipeline });
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   await server.connect(transport);
   try {

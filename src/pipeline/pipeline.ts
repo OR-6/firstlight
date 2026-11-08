@@ -248,14 +248,26 @@ export class Pipeline {
         this.audit.append('execute.refused', { planId, digest: verdict.digest, reason: 'PAYPAL_BALANCE_LOW', neededCents: totalCents, paypalBalance: balance });
         throw new PipelineError('PAYPAL_BALANCE_LOW', `PayPal sandbox balance ${balance.availableCents} cents is below the batch total ${totalCents} cents`);
       }
-      const { batchId } = this.ledger.reservePayoutBatch({
-        eventId: plan.event_id,
-        planVersion: plan.version,
-        // Same money → same key within this database; a fresh database (demo reset) gets fresh keys.
-        paypalRequestId: sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), firewall: verdict.paypalRequestId })),
-        verdictDigest: verdict.digest,
-        items: items.map((i) => ({ recipientId: i.recipientId, amountCents: i.amountCents })),
-      });
+      let batchId: number;
+      try {
+        ({ batchId } = this.ledger.reservePayoutBatch({
+          eventId: plan.event_id,
+          planVersion: plan.version,
+          // Same money → same key within this database; a fresh database (demo reset) gets fresh keys.
+          paypalRequestId: sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), firewall: verdict.paypalRequestId })),
+          verdictDigest: verdict.digest,
+          items: items.map((i) => ({ recipientId: i.recipientId, amountCents: i.amountCents })),
+        }));
+      } catch (err) {
+        // Another version of this event's plan reserved the same households (or the same batch) while we
+        // awaited PayPal's balance: the database's UNIQUE constraints refused it. Nothing was written.
+        const e = err as { code?: unknown; message?: unknown };
+        const dup =
+          e.code === 'SQLITE_CONSTRAINT_UNIQUE' && typeof e.message === 'string' && /payout_items\.event_id|payout_items\.recipient_id|payout_batches\.paypal_request_id/.test(e.message);
+        if (!dup) throw err;
+        this.audit.append('execute.refused', { planId, digest: verdict.digest, reason: 'ALREADY_PAID' });
+        throw new PipelineError('ALREADY_PAID', `households in plan ${planId} were already reserved or paid for event ${plan.event_id} by another plan version`);
+      }
       this.audit.append('payout.reserved', { planId, batchId, digest: verdict.digest, totalCents: verdict.totalCents, items: items.length, paypalBalance: balance });
       batch = this.ledger.getBatch(batchId)!;
     }
@@ -506,6 +518,33 @@ export class Pipeline {
       now,
       config: this.deps.config,
     };
+  }
+
+  // ── dry run (MCP check_payout_plan) ───────────────────────────────────────
+
+  /**
+   * Run the firewall on any payout plan, against the live registry, the ledger
+   * as it is now and the stored event, the same way `assess` does. Stores
+   * nothing, writes no audit entry, calls no LLM and no PayPal. Corroboration
+   * and the feed's sentinel findings come from the event's latest assessment;
+   * the plan's own text goes through the regex sentinel.
+   */
+  async dryRun(rawPlan: unknown): Promise<{ verdict: Verdict; ctx: FirewallContext; basis: { assessedPlanId: number | null } }> {
+    const eventId = rawPlan && typeof rawPlan === 'object' ? (rawPlan as { eventId?: unknown }).eventId : undefined;
+    if (typeof eventId !== 'string' || !eventId) throw new PipelineError('NO_EVENT', 'the plan has no eventId');
+    const event = this.events.get(eventId);
+    if (!event) throw new PipelineError('NO_EVENT', `event ${eventId} not stored`);
+    const latest = this.deps.db.prepare('SELECT id, sentinel_json, corroboration_json FROM plans WHERE event_id = ? ORDER BY id DESC LIMIT 1').get(event.id) as
+      | { id: number; sentinel_json: string; corroboration_json: string }
+      | undefined;
+    const corroboration: CorroborationReport = latest
+      ? (JSON.parse(latest.corroboration_json) as CorroborationReport)
+      : { mode: 'none', observations: [], note: 'not assessed yet' };
+    const feed = latest ? (JSON.parse(latest.sentinel_json) as SentinelReport).findings.filter((f) => f.target.startsWith('untrusted:')) : [];
+    const own = await runSentinel({ untrusted: [], rawPlan, llm: null });
+    const findings = [...feed, ...own.findings];
+    const ctx = this.context(event, corroboration, { injectionSuspected: findings.length > 0, findings }, this.clock());
+    return { verdict: evaluatePlan(rawPlan, ctx), ctx, basis: { assessedPlanId: latest?.id ?? null } };
   }
 }
 

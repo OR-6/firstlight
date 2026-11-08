@@ -61,7 +61,7 @@ describe('allowance labels and per-agent limits', () => {
     const a = ctx.allowance('lookalike', 100);
     for (let i = 0; i < 3; i++) await ctx.svc.create({ amount_usd: 5, allowance_token: a.allowanceToken }, 'agent');
     await expect(ctx.svc.create({ amount_usd: 5, allowance_token: a.allowanceToken }, 'agent')).rejects.toMatchObject({ code: 'DONOR_RATE_LIMIT' });
-    ctx.svc.revokeAllowance(a.allowanceId, a.allowanceToken);
+    ctx.svc.revokeAllowance(a.allowanceId, a.manageKey);
     const b = ctx.allowance('lookalike', 100);
     expect((await ctx.svc.create({ amount_usd: 5, allowance_token: b.allowanceToken }, 'agent')).status).toBe('AWAITING_APPROVAL');
     // A person using the agent's name is a different donor too.
@@ -218,7 +218,7 @@ describe('receipts confirmed by PayPal', () => {
 
   it('get_receipt over MCP returns paypalConfirmed and approval, and every refusal starts with a code', async () => {
     const ctx = donationSetup();
-    const server = buildMcpServer({ db: ctx.db, donations: ctx.svc });
+    const server = buildMcpServer({ db: ctx.db, donations: ctx.svc, pipeline: ctx.pipeline });
     const [x, y] = InMemoryTransport.createLinkedPair();
     await server.connect(x);
     const client = new Client({ name: 'trust-test', version: '1' });
@@ -309,13 +309,58 @@ describe('staff refund', () => {
     expect(last(ctx, 'donation.refund_failed')).toMatchObject({ receiptId: d.receipt_id, initiatedBy: 'operator' });
   });
 
-  it('a PENDING refund at PayPal is recorded, not booked', async () => {
+  it('a PENDING refund at PayPal is recorded, its debit held until the refund webhook books it', async () => {
     const ctx = donationSetup({ orders: { refundStatus: 'PENDING' } });
     const d = await humanCaptured(ctx, 8);
     const r = await ctx.svc.refund(d.receipt_id, {});
-    expect(r).toMatchObject({ status: 'CAPTURED', refundStatus: 'PENDING' });
-    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(1_008_00);
+    expect(r).toMatchObject({ status: 'CAPTURED', refundStatus: 'PENDING', refunded_cents: 0 });
+    // The money is on its way back to the donor: the pool can't spend it meanwhile.
+    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(1_000_00);
     expect(types(ctx)).toContain('donation.refund_pending');
+    const reserved = () => ctx.db.prepare("SELECT ref, amount_cents FROM ledger_entries WHERE ref LIKE 'reserve:%'").all();
+    expect(reserved()).toEqual([{ ref: `reserve:refund:${r.refundId}`, amount_cents: -8_00 }]);
+
+    // PayPal completes it later: the webhook books it and drops the reservation, so the pool is debited once.
+    await deliver(ctx, { id: 'WH-PR1', event_type: 'PAYMENT.CAPTURE.REFUNDED', resource: refundResource(r.refundId, d.capture_id!, '8.00') });
+    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(1_000_00);
+    expect(ctx.svc.get(d.receipt_id)).toMatchObject({ status: 'REFUNDED', refunded_cents: 8_00 });
+    expect(reserved()).toEqual([]);
+  });
+
+  it('a PayPal failure releases the reservation', async () => {
+    const ctx = donationSetup({ orders: { failRefund: true } });
+    const d = await humanCaptured(ctx, 8);
+    await expect(ctx.svc.refund(d.receipt_id, {})).rejects.toMatchObject({ code: 'PAYPAL' });
+    expect(ctx.db.prepare("SELECT COUNT(*) AS n FROM ledger_entries WHERE ref LIKE 'reserve:%'").get()).toEqual({ n: 0 });
+    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(1_008_00);
+  });
+
+  it('a payout reserved while PayPal handles the refund cannot take the pool negative', async () => {
+    // The pool holds exactly the donation. Staff refund it; while PayPal is answering, a payout batch tries to reserve it.
+    const ctx = donationSetup({ poolCents: 1 });
+    ctx.pipeline.ledger.debitDonation('donation_reversal', 'test:to-zero', 1); // pool = 0 before the donation
+    const d = await humanCaptured(ctx, 30);
+    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(30_00);
+    let release!: () => void;
+    const gate = new Promise<void>((res) => (release = res));
+    const realRefund = ctx.fake.orders.refund.bind(ctx.fake.orders);
+    ctx.fake.orders.refund = async (input) => {
+      await gate;
+      return realRefund(input);
+    };
+    const refunding = ctx.svc.refund(d.receipt_id, {});
+    await Promise.resolve();
+    // During the await: the refund's debit is already held, so the batch sees an empty pool.
+    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(0);
+    expect(() =>
+      ctx.pipeline.ledger.reservePayoutBatch({ eventId: 'us6000u18k', planVersion: 1, paypalRequestId: 'race-1', verdictDigest: 'race-digest', items: [{ recipientId: 'rcp_01', amountCents: 30_00 }] }),
+    ).toThrow(/pool has 0 cents/);
+    release();
+    expect((await refunding).status).toBe('REFUNDED');
+    expect(ctx.pipeline.ledger.poolBalanceCents()).toBe(0);
+    expect(ctx.db.prepare("SELECT COUNT(*) AS n FROM ledger_entries WHERE ref LIKE 'reserve:%'").get()).toEqual({ n: 0 });
+    expect(last(ctx, 'donation.refunded')).toMatchObject({ amountCents: 30_00 });
+    expect(last(ctx, 'donation.refunded')?.flag).toBeUndefined();
   });
 
   it('two refunds of one donation at once: only one reaches PayPal', async () => {

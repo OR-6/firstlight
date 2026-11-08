@@ -31,6 +31,7 @@ const STATUS: Record<string, number> = {
   NOT_UNCLAIMED: 409,
   NO_PAYPAL_ITEM: 409,
   IN_PROGRESS: 409,
+  ALREADY_PAID: 409,
 };
 
 /** User-facing explanations: what happened and what to do. */
@@ -49,6 +50,7 @@ const MESSAGE: Record<string, string> = {
   NOT_UNCLAIMED: 'Only unclaimed payouts can be cancelled. Check the status with PayPal first.',
   NO_PAYPAL_ITEM: "PayPal hasn't reported this item's id yet. Check the status now, then try again.",
   IN_PROGRESS: 'This item is already being cancelled.',
+  ALREADY_PAID: 'Another version of this plan already reserved or paid these households for this earthquake, so nothing was sent. Run a new assessment to see who is still owed.',
 };
 
 export function fail(err: unknown): Response {
