@@ -227,6 +227,7 @@ const STATUS_TEXT: Record<string, string> = {
   DENIED: 'was declined by PayPal. Nothing reached the pool.',
   REFUNDED: 'was refunded to you, so it is no longer in the pool.',
   PARTIALLY_REFUNDED: 'was partly refunded to you; the rest is in the pool.',
+  PAYER_MISMATCH: "was approved by a different PayPal account than this agent's allowance is tied to, so it was not captured and nothing was charged.",
   REVERSED: 'was reversed by PayPal, so it is no longer in the pool.',
 };
 

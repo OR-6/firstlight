@@ -157,7 +157,8 @@ claude mcp add --transport http firstlight https://firstlight.onrender.com/mcp
 ```
 
 - The server enforces the allowance: unknown, revoked or expired tokens and amounts over what's left are refused, and the donor name is the allowance's label, not something the agent asserts. The person can revoke it at any time.
-- **A person still approves every payment on PayPal**; nothing is charged otherwise.
+- **A person still approves every payment on PayPal**; nothing is charged otherwise. Each allowance is tied to the PayPal account that approves its first payment: a payment approved by another account isn't captured.
+- **Receipts are confirmed by PayPal itself**: `paypalConfirmed` comes from PayPal's hosted sandbox MCP server (read-only, `get_order` only), with the Server SDK as fallback. Staff can refund a donation from the console; the pool is debited once.
 - Receipts reference audit entries an agent can check itself: the hash formula is in the manifest (`receiptFormat.auditChain`), and `scripts/verify-chain.ts` recomputes it without importing any Firstlight code. A receipt proves the donation is in the audit log and shows pool totals; it does not prove where each dollar went, because the pool is shared.
 - Manifest: `/.well-known/firstlight.json`, summary: `/llms.txt`. MCP tools: `get_pool_status`, `list_active_events`, `get_allowance`, `create_donation`, `get_receipt`.
 - `npm run samaritan` is a scripted (not LLM) example donor: `FIRSTLIGHT_ALLOWANCE_TOKEN=alw_… FIRSTLIGHT_URL=https://firstlight.onrender.com npm run samaritan`.
