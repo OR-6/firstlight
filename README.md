@@ -11,7 +11,7 @@ The model proposes; the code disposes.
 
 **Why early matters.** When WFP sent cash to Bangladeshi households about 4 days before the 2020 flood peak, they were 36% less likely to go a day without eating ([WFP](https://www.wfp.org/publications/acting-flood-protect-most-vulnerable-independent-review-wfps-anticipatory-cash), [Anticipation Hub](https://www.anticipation-hub.org/news/generating-evidence-on-the-impact-of-wfps-anticipatory-cash-transfers-ahead-of-severe-river-floods-in-bangladesh)). Earthquakes can't be forecast, so the fastest honest version is to pay households enrolled *before* the quake within minutes of it being confirmed.
 
-**What's different.** Most relief tools wait for applications, and most agent-payment firewalls try to detect bad instructions. Firstlight does neither: households are enrolled before the quake, so there's nothing to apply for or fake, and the AI agent's output has no field where a payee or an amount could go.
+**What's different.** Most relief tools wait for applications, and most agent-payment firewalls try to detect bad instructions. Firstlight does neither: households are enrolled before the quake, so there's nothing to apply for or fake, and the AI agent's output has no field where a payee or an amount could go. And the firewall has a floor as well as ceilings: an agent that quietly pays someone less or leaves them out is caught too.
 
 **Who it's for.** Cash-programme leads at aid organisations (a Red Cross national society, a cash NGO) that already enrol households through field partners.
 
@@ -99,7 +99,7 @@ With the real AI agent (recorded run) and four poisoned news items, the agent su
   - **Payouts**: real batches, idempotent, with unknown outcomes resent under the same `PayPal-Request-Id`. They use the REST API directly, because neither the Server SDK nor PayPal's Agent Toolkit has a Payouts call.
   - **Orders v2** for donations, through the PayPal Server SDK (built with the APIMatic Context Plugin).
   - **Verified webhooks**, with polling as a fallback.
-  - **Before a batch:** Firstlight checks the PayPal balance.
+  - **Before a batch:** Firstlight checks the PayPal balance when the app has Transaction Search (the demo app doesn't yet, so it records "not checked" and goes on).
   - **After a batch:** /payouts reconciles it against PayPal's own record, books PayPal's fee in the pool, and shows the end-to-end time from the audit log.
   - **Without sending anything:** /payouts reads our four recorded sandbox batches back from PayPal live and shows what PayPal reports now, fees and PayPal's own timestamps included. All four match.
   - **Unclaimed payouts:** an operator can cancel one so the money returns to the pool.
@@ -134,6 +134,16 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 | `npm run webhook:register -- https://…` | Register the webhook on the sandbox app |
 | `npm run record:fixtures` | Re-record the agent run (needs an LLM API key) |
 | `npm run fetch:usgs` | Live USGS feed, read-only |
+
+### Set up your own PayPal sandbox (about 10 minutes)
+
+1. On [developer.paypal.com](https://developer.paypal.com) → **Apps & Credentials** (Sandbox), create a REST app on a sandbox **business** account in a Payouts-enabled country (a US one works; the default account may return `PAYOUT_NOT_AVAILABLE`). Turn on **Payouts**, and **Transaction search** if you want the balance check and transaction lookups.
+2. Put the app's client id and secret in `.env` (`PAYPAL_ENV=sandbox`). Check them with `npm run paypal:check` (fetches a token, moves no money).
+3. Under **Sandbox → Accounts**, create a few **personal** accounts and put their emails in `config/payees.sandbox.json` (copy the example file), one per household id.
+4. Send a $1 test: set `PAYPAL_SMOKE_RECEIVER` to one personal account and run `npm run smoke:payout -- --send`.
+5. For webhooks you need a public URL (your Render deploy works): `npm run webhook:register -- https://<your-app>/api/webhooks/paypal`, then set the printed id as `PAYPAL_WEBHOOK_ID`. Without it, payout status still arrives by polling.
+
+PayPal docs used: [Payouts](https://developer.paypal.com/docs/api/payments.payouts-batch/v1/), [Orders v2](https://developer.paypal.com/docs/api/orders/v2/), [Webhooks and verify-webhook-signature](https://developer.paypal.com/api/rest/webhooks/), [Transaction Search](https://developer.paypal.com/docs/api/transaction-search/v1/), [PayPal's MCP server and Agent Toolkit](https://github.com/paypal/agent-toolkit).
 
 ## Environment
 
@@ -213,9 +223,9 @@ Things we learned building on the PayPal Developer Platform that other builders 
   - the SDK has no Payouts or webhook-verification calls, so those use the REST API.
 
   See [docs/decisions.md](docs/decisions.md) D51 and the comments in `src/paypal/orders.ts`.
-- **AG Grid:** the plan and payout tables use AG Grid Community with a custom `themeQuartz` theme matching the road-sign design system, only the modules in use, a pinned total row, sortable distance and amount, CSV export of each payout batch for finance, and card layouts on phones (`src/ui/PlanGrid.tsx`, `src/app/payouts/page.tsx`).
+- **AG Grid:** the plan and payout tables use AG Grid Community with a custom `themeQuartz` theme matching the road-sign design system, only the modules in use; the plan grid has a pinned total row and sortable distance and amount; the payout grid exports each batch as CSV for finance; both switch to cards on phones (`src/ui/PlanGrid.tsx`, `src/app/payouts/page.tsx`).
 - **Render:** deployed from the `render.yaml` blueprint with a readiness check (`/api/health` opens the database and reports what the instance can do). The Deploy button above creates your own copy: it runs in replay mode with no keys; add `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYEES_JSON` to send sandbox payouts, `PAYPAL_WEBHOOK_ID` for webhooks, and `APP_BASE_URL` if you use a custom domain.
-- **Postman:** [`docs/postman/firstlight.postman_collection.json`](docs/postman/firstlight.postman_collection.json): the first folder is read-only and safe to run top to bottom in the Collection Runner (tests on every request, `planId` captured automatically, PayPal reconciliation, all six MCP tools including `check_payout_plan`); the second folder changes state and can send sandbox money.
+- **Postman:** [`docs/postman/firstlight.postman_collection.json`](docs/postman/firstlight.postman_collection.json): the first folder is read-only and safe to run top to bottom in the Collection Runner (tests on every request, `planId` captured automatically, PayPal reconciliation, initialize, tools/list and five MCP tool calls including `check_payout_plan`); the second folder changes state and can send sandbox money.
 
 ## Judge access
 

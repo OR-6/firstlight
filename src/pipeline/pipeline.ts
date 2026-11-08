@@ -46,7 +46,7 @@ export type PipelineDeps = {
 };
 
 /**
- * How the payout batch's PayPal-Request-Id and sender_batch_id are derived (D9x).
+ * How the payout batch's PayPal-Request-Id and sender_batch_id are derived (D114).
  *
  *  - `database` (the resettable demo): both mix in the database's random instance id
  *    (`meta.instance_id`). The hosted demo's database lives in /tmp and is reset on

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Firstlight (PayPal sandbox)",
-    "description": "Earthquake relief cash in minutes, no application needed. Every public endpoint of the hosted demo. PayPal SANDBOX only: no real money moves.\n\nThe first folder is read-only and safe to run top to bottom with the Collection Runner; each request has tests. The second folder changes the demo's state, and 'Send payouts' creates a real PayPal sandbox payout batch.",
+    "description": "Earthquake relief cash in minutes, no application needed. The judge path through the hosted demo's public endpoints. PayPal SANDBOX only: no real money moves.\n\nThe first folder is read-only and safe to run top to bottom with the Collection Runner; each request has tests. The second folder changes the demo's state, and 'Send payouts' creates a real PayPal sandbox payout batch.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [

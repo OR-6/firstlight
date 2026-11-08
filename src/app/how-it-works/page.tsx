@@ -144,7 +144,7 @@ export default function HowItWorks() {
             Enrolment doesn&apos;t have to be a separate list. Where a government already runs a social registry for cash transfers, the same pre-checked households can be used, and the firewall pays a top-up when the quake hits. The sector calls
             this shock-responsive social protection.
           </p>
-          <p className="text-ink-muted">In this demo the eight enrolled households near the M7.7 Panama earthquake are synthetic, and their PayPal accounts are sandbox test accounts.</p>
+          <p className="text-ink-muted">In this demo the eight enrolled households near the M7.7 Panama earthquake are synthetic, and their PayPal accounts are sandbox test accounts. Seven are paid; the eighth, in Yaviza, is 343 km away, beyond the 300 km band, so the firewall correctly leaves it out.</p>
         </section>
 
         <section aria-labelledby="lastmile" className={`${PROSE} space-y-3`}>
