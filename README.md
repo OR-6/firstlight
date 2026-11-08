@@ -165,13 +165,31 @@ https://firstlight.onrender.com/mcp     # Streamable HTTP; add it to any MCP cli
 
 ## For judges
 
-| Criterion | Where to look |
+| Criterion | What answers it |
 |---|---|
-| Technological implementation | PayPal Payouts + Orders v2 + verified webhooks (`src/paypal/`); AI agent with strict tool schemas (`src/agent/`); pure firewall R1–R10 and R12 (`src/firewall/`); hash-chained audit (`src/ledger/audit.ts`); `npm test` |
-| Design | Mission control → Plans → Approvals → Payouts on the live demo; road-sign design system in [DESIGN.md](DESIGN.md) |
-| Potential impact | Relief cash for pre-enrolled households minutes after a quake, no application: [How it works](https://firstlight.onrender.com/how-it-works) |
-| Innovation | Capability restriction instead of detection, for payees, amounts *and* messages; a firewall floor (R12) as well as ceilings; red-team console anyone can run, with residual risks shown; AI agents donating over MCP within an allowance a person set |
-| Presentation | Video (link above) and this README |
+| **Technological implementation:** how thoroughly does it use the PayPal Developer Platform and AI tools? | Six PayPal surfaces, listed below, with idempotent payouts, raw-byte webhook verification and reconciliation. An AI agent with strict tool schemas (`src/agent/`); a pure firewall R1–R10 and R12 (`src/firewall/`); a hash-chained audit log; CI on every push |
+| **Design:** a complete, coherent product, not a proof of concept? | Mission control → a person's decision → PayPal → Payouts, in one road-sign design system ([DESIGN.md](DESIGN.md)), on desktop and phone, with a plain-English check list for every household |
+| **Potential impact:** a credible case for a real problem and audience? | Cash programmes that enrol households before disasters; Nepal 2015 and WFP evidence above; [How it works](https://firstlight.onrender.com/how-it-works) covers enrolment, the last mile, complaints and personal data |
+| **Innovation:** how is it different? | No application (pre-enrolled, parametric trigger); an agent with no field for a payee or amount; a floor as well as ceilings; a red team that shows what it doesn't stop; agents donating within a person's allowance, confirmed by PayPal's own MCP server |
+| **Presentation:** does the video show it working end to end? | Video (link above): one household from enrolment to money in her PayPal account, then the attack, then an AI agent donating |
+
+### PayPal APIs used
+
+| PayPal surface | What Firstlight does with it | Code |
+|---|---|---|
+| Payouts API | One batch per approved plan; `PayPal-Request-Id` derived from the firewall verdict, so a resend can't pay twice; unknown outcomes resent under the same id; item status, transaction ids and failure reasons kept; unclaimed items can be cancelled | `src/paypal/payouts.ts`, `src/pipeline/pipeline.ts` |
+| Orders v2 (PayPal Server SDK) | Donations: create with a payer-action link, capture on return or on `CHECKOUT.ORDER.APPROVED`, refunds | `src/paypal/orders.ts` |
+| Webhooks | Every delivery verified with `verify-webhook-signature` on the raw bytes; payout, capture, pending, denied, refund and reversal events; de-duplicated; failed processing is retried | `src/paypal/webhooks.ts`, `src/pipeline/webhooks.ts` |
+| PayPal's hosted MCP server | Read-only `get_order` (allowlisted) confirms every donation receipt with PayPal itself | `src/paypal/hosted-mcp.ts` |
+| Transaction Search (Server SDK) | Balance check before a batch and transaction lookups for reconciliation, when the app has the scope | `src/paypal/reporting.ts`, `src/paypal/reconcile.ts` |
+| Sandbox | Everything: hosted demo, tests against stubbed clients, real sandbox batches listed on /payouts | — |
+
+### Built with our sponsors' tools
+
+- **APIMatic Context Plugin:** used before any PayPal code was written, to look up the PayPal Server SDK's Orders, Payments and Transaction Search endpoints and models (create with `paypalRequestId`, `PaypalWalletExperienceContext`, the `payer-action` link, refund-capture, `searchBalances`). It also told us what the SDK doesn't cover (Payouts, webhook verification), so those went to the REST API. See [docs/decisions.md](docs/decisions.md) D51.
+- **AG Grid:** the plan and payout tables use AG Grid Community with a custom `themeQuartz` theme matching the road-sign design system, wrapped text for the multilingual notes, and a card layout on phones (`src/ui/PlanGrid.tsx`).
+- **Render:** deployed from the `render.yaml` blueprint with a health check; replay mode means it runs with no AI key. [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OR-6/firstlight)
+- **Postman:** [`docs/postman/firstlight.postman_collection.json`](docs/postman/firstlight.postman_collection.json) has every public endpoint in the order a judge would try them, MCP calls included. Import it, keep `baseUrl` as the hosted demo, and run top to bottom.
 
 ## Judge access
 
