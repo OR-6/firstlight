@@ -1,21 +1,45 @@
 import { DonationService } from '../../src/donations/service';
 import type { Db } from '../../src/ledger/db';
-import type { CapturedOrder, DonationOrders } from '../../src/paypal/orders';
+import type { CapturedOrder, DonationOrders, OrderLookup, RefundResult } from '../../src/paypal/orders';
 import type { PayPalClient } from '../../src/paypal/client';
 import { handlePayPalWebhook } from '../../src/pipeline/webhooks';
 import { GOOD_PLAN, makePipeline, scriptedAgent } from './pipeline-fixture';
 
 export const DNOW = Date.parse('2026-11-10T12:00:00Z');
 
-/** Fake PayPal Orders API: create returns an approval link, capture is idempotent per order. */
-export function fakeOrders(opts: { captureCents?: number; captureStatus?: string; failCapture?: boolean } = {}) {
+export type FakeOrderOpts = {
+  captureCents?: number;
+  captureStatus?: string;
+  failCapture?: boolean;
+  /** PayPal payer id that approves orders (change it to simulate another PayPal account). */
+  payer?: string;
+  /** Payer the capture response reports, if different from the approval (should never happen). */
+  capturePayer?: string;
+  failGet?: boolean;
+  refundStatus?: string;
+  failRefund?: boolean;
+  /** When set, the fake has a confirm() like PayPalOrders (hosted MCP path). */
+  confirmSource?: 'paypal_hosted_mcp' | 'paypal_orders_api';
+};
+
+/** Fake PayPal Orders API: create returns an approval link, capture is idempotent per order, refunds per PayPal-Request-Id. */
+export function fakeOrders(opts: FakeOrderOpts = {}) {
   let n = 0;
-  const calls = { create: [] as string[], capture: [] as string[] };
+  const calls = { create: [] as string[], capture: [] as string[], get: [] as string[], confirm: [] as string[], refund: [] as { captureId: string; amountCents: number; requestId: string }[] };
   const captured = new Map<string, CapturedOrder>();
+  const approvedBy = new Map<string, string>();
+  const amounts = new Map<string, number>();
+  const refunds = new Map<string, RefundResult>();
+  const lookup = (orderId: string): OrderLookup => {
+    const c = captured.get(orderId);
+    const payerId = approvedBy.get(orderId) ?? opts.payer ?? 'PAYERTESTA1';
+    return c ? { ...c, payerId: c.payerId ?? payerId } : { orderId, status: 'APPROVED', payerId, captureId: null, captureStatus: null, amountCents: null };
+  };
   const orders: DonationOrders = {
     async create(input) {
       calls.create.push(input.requestId);
       const orderId = `ORDER${String(++n).padStart(8, '0')}`;
+      amounts.set(orderId, input.amountCents);
       return { orderId, status: 'PAYER_ACTION_REQUIRED', approvalUrl: `https://www.sandbox.paypal.com/checkoutnow?token=${orderId}` };
     },
     async capture(orderId, requestId) {
@@ -23,11 +47,35 @@ export function fakeOrders(opts: { captureCents?: number; captureStatus?: string
       if (opts.failCapture) throw new Error('PayPal could not capture order (HTTP 503)');
       const prev = captured.get(orderId);
       if (prev) return prev;
-      const r = { orderId, status: 'COMPLETED', captureId: `CAP${orderId.slice(5)}`, captureStatus: opts.captureStatus ?? 'COMPLETED', amountCents: opts.captureCents ?? null };
+      const payerId = opts.capturePayer ?? approvedBy.get(orderId) ?? opts.payer ?? 'PAYERTESTA1';
+      const r: CapturedOrder = { orderId, status: 'COMPLETED', captureId: `CAP${orderId.slice(5)}`, captureStatus: opts.captureStatus ?? 'COMPLETED', amountCents: opts.captureCents ?? amounts.get(orderId) ?? null, payerId };
       captured.set(orderId, r);
       return r;
     },
+    async get(orderId) {
+      calls.get.push(orderId);
+      if (opts.failGet) throw new Error('PayPal could not get order (HTTP 503)');
+      const r = lookup(orderId);
+      if (!captured.has(orderId)) approvedBy.set(orderId, r.payerId!);
+      return r;
+    },
+    async refund(input) {
+      calls.refund.push({ captureId: input.captureId, amountCents: input.amountCents, requestId: input.requestId });
+      if (opts.failRefund) throw new Error('PayPal could not refund capture (HTTP 422, UNPROCESSABLE_ENTITY: CAPTURE_FULLY_REFUNDED)');
+      const prev = refunds.get(input.requestId);
+      if (prev) return prev; // PayPal-Request-Id idempotency
+      const r = { refundId: `REF${String(refunds.size + 1).padStart(10, '0')}`, status: opts.refundStatus ?? 'COMPLETED', amountCents: input.amountCents };
+      refunds.set(input.requestId, r);
+      return r;
+    },
   };
+  if (opts.confirmSource) {
+    orders.confirm = async (orderId) => {
+      calls.confirm.push(orderId);
+      if (opts.failGet) throw new Error('hosted MCP and SDK both failed');
+      return { ...lookup(orderId), source: opts.confirmSource! };
+    };
+  }
   return { orders, calls, opts };
 }
 

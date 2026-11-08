@@ -10,6 +10,8 @@ import { listReplayEvents } from '../signals/replay';
  */
 export const DONATION_LIMITS = { minUsd: 1, maxUsd: 100, perDonorDailyUsd: 200, currency: 'USD' } as const;
 
+export const RECEIPT_STATUSES = 'CREATING | AWAITING_APPROVAL | PENDING | CAPTURED | PARTIALLY_REFUNDED | REFUNDED | REVERSED | DENIED | PAYER_MISMATCH | CANCELED | FAILED';
+
 export type ActiveEvent = {
   eventId: string;
   title: string;
@@ -86,9 +88,10 @@ export function manifest(baseUrl: string) {
         amount_usd: 'number, 1 to 100, at most 2 decimals; must fit in what is left of your allowance',
         allowance_token: `required; ${ALLOWANCE_TOKEN_PATTERN}; created for you by a person`,
         message: 'optional, up to 280 characters; treated as untrusted text',
-        idempotency_key: 'optional, 8 to 64 of A-Z a-z 0-9 _ -; repeating it under the same allowance returns the same receipt',
+        idempotency_key: 'optional, 8 to 64 of A-Z a-z 0-9 _ -; repeating it under the same allowance returns the same receipt (agent donations only)',
       },
-      donorRef: 'Not sent by the agent. Agent donations are shown under the allowance label the person chose.',
+      donorRef: 'Not sent by the agent. Agent donations are shown under the allowance label the person chose, marked as an AI agent with the allowance handle (alid_ + 6 hex).',
+      perDonorLimits: 'For agents the daily limit and rate limit count per allowance, not per label.',
     },
     allowances: {
       what: 'A person lets one agent donate up to a cap until an expiry. The server enforces the label, the cap and the expiry; each payment is still approved by a person on PayPal.',
@@ -96,7 +99,10 @@ export function manifest(baseUrl: string) {
       create: { method: 'POST', url: `${b}/api/allowances`, body: { label: 'who the agent is, up to 64 characters', cap_usd: `${ALLOWANCE_LIMITS.minCapUsd} to ${ALLOWANCE_LIMITS.maxCapUsd}`, expires_in_hours: `${ALLOWANCE_LIMITS.minHours} to ${ALLOWANCE_LIMITS.maxHours}` } },
       revoke: { method: 'POST', url: `${b}/api/allowances/{allowanceId}/revoke`, body: { allowance_token: 'alw_…' }, note: 'Needs the token as well as the id. Donations still waiting for approval are cancelled.' },
       check: { method: 'POST', url: `${b}/api/agent/allowance`, body: { allowance_token: 'alw_…' } },
-      remaining: 'cap minus donations under it that are being created, waiting for approval, pending at PayPal or received (refunded, denied, cancelled and failed ones do not count)',
+      remaining: 'cap minus donations under it that are being created, waiting for approval, pending at PayPal or received (refunded, denied, held, cancelled and failed ones do not count)',
+      label: 'Unique among allowances that are not revoked or expired, compared without case (LABEL_TAKEN otherwise).',
+      payPalAccount:
+        'The first donation approved on PayPal ties the allowance to that PayPal account. A later donation approved by a different account is not captured: it is held as PAYER_MISMATCH, never credited, and recorded in the audit log. get_allowance shows paypalAccount.tied; receipts show approval.bySamePayPalAccount.',
       token: 'Shown once at creation; the server stores only its sha256. Never put it in a URL.',
     },
     endpoints: {
@@ -112,8 +118,11 @@ export function manifest(baseUrl: string) {
     mcpTools: ['get_pool_status', 'list_active_events', 'get_allowance', 'create_donation', 'get_receipt'],
     receiptFormat: {
       receiptId: 'rcpt_ followed by 16 hex characters',
-      status: 'CREATING | AWAITING_APPROVAL | PENDING | CAPTURED | PARTIALLY_REFUNDED | REFUNDED | REVERSED | DENIED | CANCELED | FAILED',
-      audit: 'created / captured entries {seq, hash} plus lifecycle entries (pending, refunded, reversed, denied, cancelled)',
+      status: RECEIPT_STATUSES,
+      audit: 'created / captured entries {seq, hash} plus lifecycle entries (pending, held for a different PayPal account, refunded, reversed, denied, cancelled)',
+      paypalConfirmed:
+        "{status, captureId, captureStatus, amount, checkedAt, source, matchesReceipt}: what PayPal reports for the order when the receipt is fetched, via PayPal's hosted MCP server (get_order) or the Orders v2 API. Cached up to 30 s. null with paypalConfirmedReason when PayPal could not be asked.",
+      approval: '{bySamePayPalAccount, note}: for agent donations, whether the PayPal account that approved it is the one the allowance is tied to',
       poolSummary: 'totalDisbursedUsd, recipientsCount, batchIds, auditHeadHash',
       whatItProves: RECEIPT_PROVES,
       auditChain: {
@@ -153,9 +162,10 @@ Donor agents can fund the relief pool, but only under an allowance a person gave
 
 ## Rules
 - $1 to $100 per donation, $200 per donor per day, and never more than what is left of your allowance.
-- Your donor name is your allowance's label. You don't send donor_ref.
+- Your donor name is your allowance's label. You don't send donor_ref. Labels are unique among active allowances, and the feed marks you as an AI agent with your allowance handle.
+- The first payment approved on PayPal ties your allowance to that PayPal account. A payment approved by another account is held and never credited.
 - create_donation returns a PayPal approval URL. Nothing is charged until a person approves it there.
 - Your message is stored as untrusted text. It is never read by the payout agent.
-- A receipt shows your donation is in the audit log and what the pool has paid out. It does not show where each dollar went: the pool is shared.
+- A receipt shows your donation is in the audit log, what PayPal itself reports for the order (paypalConfirmed), and what the pool has paid out. The donor can match paypal.captureId in their own PayPal activity. It does not show where each dollar went: the pool is shared.
 `;
 }

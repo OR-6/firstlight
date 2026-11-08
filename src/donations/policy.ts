@@ -11,9 +11,9 @@ import { z } from 'zod';
 export type DonationPolicyConfig = {
   minCents: number;
   maxCents: number;
-  /** Per donor_ref, rolling 24 h, counting everything not failed or cancelled. */
+  /** Per donor (allowance id for agents, donor_ref for people), rolling 24 h, counting everything not failed or cancelled. */
   perDonorDailyCapCents: number;
-  /** Per donor_ref new donations in a rolling 10 minutes. */
+  /** Per donor new donations in a rolling 10 minutes. */
   perDonorPer10Min: number;
   /** All donors, rolling 10 minutes. */
   globalPer10Min: number;
@@ -49,7 +49,8 @@ export const DonationRequestSchema = z.strictObject({
     .optional(),
 });
 
-export type RecentDonation = { donorRef: string; amountCents: number; at: number; status: string };
+/** `allowanceId` is set for agent donations; per-donor limits then key on it, not on the (display) name. */
+export type RecentDonation = { donorRef: string; amountCents: number; at: number; status: string; allowanceId?: string | null };
 
 export type DonationDecision =
   | { ok: true; amountCents: number; donorRef: string; message: string | null; idempotencyKey: string | null }
@@ -69,7 +70,8 @@ export type DonationRejection =
 const MIN10 = 10 * 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const NOT_COUNTED = new Set(['FAILED', 'CANCELED']);
+// PAYER_MISMATCH: held before capture, so no money moved.
+const NOT_COUNTED = new Set(['FAILED', 'CANCELED', 'PAYER_MISMATCH']);
 
 /** Control and invisible characters are removed from the free-text message before storage. */
 export function cleanMessage(m: string | undefined): string | null {
@@ -80,7 +82,7 @@ export function cleanMessage(m: string | undefined): string | null {
 
 export function evaluateDonation(
   raw: unknown,
-  ctx: { now: number; recent: readonly RecentDonation[]; config?: DonationPolicyConfig },
+  ctx: { now: number; recent: readonly RecentDonation[]; config?: DonationPolicyConfig; allowanceId?: string },
 ): DonationDecision {
   const config = ctx.config ?? defaultDonationPolicy();
   const parsed = DonationRequestSchema.safeParse(raw);
@@ -102,7 +104,11 @@ export function evaluateDonation(
   if (cents > config.maxCents) return { ok: false, code: 'AMOUNT_TOO_LARGE', message: `Maximum donation in the sandbox is $${(config.maxCents / 100).toFixed(2)}.` };
 
   const donorRef = r.donor_ref;
-  const mine = ctx.recent.filter((d) => d.donorRef === donorRef && !NOT_COUNTED.has(d.status));
+  // "This donor": an agent is its allowance (labels are only names, so one agent can't spend another's limit by
+  // sharing its label); a person is their name among people's donations, compared without case.
+  const nameKey = (s: string) => s.normalize('NFKC').toLowerCase();
+  const sameDonor = (d: RecentDonation) => (ctx.allowanceId ? d.allowanceId === ctx.allowanceId : !d.allowanceId && nameKey(d.donorRef) === nameKey(donorRef));
+  const mine = ctx.recent.filter((d) => sameDonor(d) && !NOT_COUNTED.has(d.status));
 
   const day = mine.filter((d) => d.at > ctx.now - DAY).reduce((s, d) => s + d.amountCents, 0);
   if (day + cents > config.perDonorDailyCapCents) {
@@ -115,7 +121,7 @@ export function evaluateDonation(
     return { ok: false, code: 'GLOBAL_RATE_LIMIT', message: 'The pool is receiving too many donations right now. Try again in a few minutes.' };
   }
   if (cents < config.microDonationCents) {
-    const micro = ctx.recent.filter((d) => d.donorRef === donorRef && d.at > ctx.now - HOUR && d.amountCents < config.microDonationCents).length;
+    const micro = ctx.recent.filter((d) => sameDonor(d) && d.at > ctx.now - HOUR && d.amountCents < config.microDonationCents).length;
     if (micro + 1 >= config.microDonationsPerHour) {
       return { ok: false, code: 'CARD_TESTING_PATTERN', message: 'Repeated very small donations are blocked (a common card-testing pattern).' };
     }

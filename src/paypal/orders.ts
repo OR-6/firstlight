@@ -4,12 +4,16 @@ import {
   Client,
   Environment,
   OrdersController,
+  PaymentsController,
   PaypalExperienceUserAction,
   PaypalWalletContextShippingPreference,
   type Order,
 } from '@paypal/paypal-server-sdk';
 import { toPayPalValue } from '../firewall/money';
-import { loadPayPalConfig, type PayPalConfig } from './client';
+import { PayPalClient, loadPayPalConfig, type PayPalConfig } from './client';
+import { HostedPayPalMcp, type OrderLookup } from './hosted-mcp';
+
+export type { OrderLookup } from './hosted-mcp';
 
 /**
  * Donations through PayPal Orders v2 (SPEC §5.6), built on the official
@@ -21,12 +25,29 @@ import { loadPayPalConfig, type PayPalConfig } from './client';
  * Sandbox only: loadPayPalConfig refuses anything but PAYPAL_ENV=sandbox.
  */
 export type CreatedOrder = { orderId: string; status: string; approvalUrl: string };
-export type CapturedOrder = { orderId: string; status: string; captureId: string | null; captureStatus: string | null; amountCents: number | null };
+export type CapturedOrder = {
+  orderId: string;
+  status: string;
+  captureId: string | null;
+  captureStatus: string | null;
+  amountCents: number | null;
+  /** PayPal account that approved the order (payment_source.paypal.account_id). Never shown publicly. */
+  payerId?: string | null;
+};
+export type RefundResult = { refundId: string; status: string; amountCents: number | null };
+/** An order as PayPal reports it right now, and which PayPal interface said so. */
+export type OrderConfirmation = OrderLookup & { source: 'paypal_hosted_mcp' | 'paypal_orders_api'; fallbackReason?: string };
 
 /** What the donation service needs from PayPal. Tests use a fake. */
 export interface DonationOrders {
   create(input: { amountCents: number; receiptId: string; description: string; returnUrl: string; cancelUrl: string; requestId: string }): Promise<CreatedOrder>;
   capture(orderId: string, requestId: string): Promise<CapturedOrder>;
+  /** Orders v2 get: status, payer and capture of an order. Read-only. */
+  get(orderId: string): Promise<OrderLookup>;
+  /** Refund (part of) a capture. `requestId` is the PayPal-Request-Id, so a retry never refunds twice. */
+  refund(input: { captureId: string; amountCents: number; requestId: string; note: string }): Promise<RefundResult>;
+  /** Read-only confirmation for receipts; falls back to `get` when absent. */
+  confirm?(orderId: string): Promise<OrderConfirmation>;
 }
 
 export class OrdersError extends Error {
@@ -41,8 +62,15 @@ export class OrdersError extends Error {
 
 export class PayPalOrders implements DonationOrders {
   private readonly orders: OrdersController;
+  private readonly payments: PaymentsController;
+  private readonly mcp: HostedPayPalMcp | null;
 
-  constructor(config: PayPalConfig = loadPayPalConfig()) {
+  /**
+   * `hostedMcp` (default on unless PAYPAL_HOSTED_MCP=off): receipts are
+   * confirmed through PayPal's hosted sandbox MCP server (get_order only),
+   * falling back to the Server SDK when it fails.
+   */
+  constructor(config: PayPalConfig = loadPayPalConfig(), opts: { hostedMcp?: boolean } = {}) {
     const client = new Client({
       clientCredentialsAuthCredentials: { oAuthClientId: config.clientId, oAuthClientSecret: config.clientSecret },
       environment: Environment.Sandbox,
@@ -50,6 +78,10 @@ export class PayPalOrders implements DonationOrders {
       // No SDK logging: request/response logs would include bearer tokens and payer details.
     });
     this.orders = new OrdersController(client);
+    this.payments = new PaymentsController(client);
+    const useMcp = opts.hostedMcp ?? process.env.PAYPAL_HOSTED_MCP !== 'off';
+    const rest = new PayPalClient(config);
+    this.mcp = useMcp ? new HostedPayPalMcp(async () => (await rest.getToken()).accessToken) : null;
   }
 
   async create(input: Parameters<DonationOrders['create']>[0]): Promise<CreatedOrder> {
@@ -98,6 +130,48 @@ export class PayPalOrders implements DonationOrders {
       throw toOrdersError(err, 'capture order');
     }
   }
+
+  async get(orderId: string): Promise<OrderLookup> {
+    if (!/^[A-Z0-9]{8,36}$/.test(orderId)) throw new OrdersError(null, 'invalid order id');
+    try {
+      const res = await this.orders.getOrder({ id: orderId });
+      const s = summarise(res.result);
+      return { ...s, payerId: s.payerId ?? null };
+    } catch (err) {
+      throw toOrdersError(err, 'get order');
+    }
+  }
+
+  async refund(input: { captureId: string; amountCents: number; requestId: string; note: string }): Promise<RefundResult> {
+    if (!/^[A-Z0-9]{8,36}$/.test(input.captureId)) throw new OrdersError(null, 'invalid capture id');
+    try {
+      const res = await this.payments.refundCapturedPayment({
+        captureId: input.captureId,
+        paypalRequestId: input.requestId,
+        prefer: 'return=representation',
+        body: { amount: { currencyCode: 'USD', value: toPayPalValue(input.amountCents) }, noteToPayer: input.note.slice(0, 255) },
+      });
+      const r = res.result;
+      if (!r.id) throw new OrdersError(res.statusCode, 'PayPal accepted the refund but returned no refund id');
+      const value = r.amount?.value;
+      return { refundId: r.id, status: r.status ?? 'UNKNOWN', amountCents: value ? Math.round(Number(value) * 100) : null };
+    } catch (err) {
+      throw toOrdersError(err, 'refund capture');
+    }
+  }
+
+  /** Hosted MCP get_order first, Server SDK getOrder if that fails (the reason is kept). */
+  async confirm(orderId: string): Promise<OrderConfirmation> {
+    let fallbackReason: string | undefined;
+    if (this.mcp) {
+      try {
+        return { ...(await this.mcp.getOrder(orderId)), source: 'paypal_hosted_mcp' };
+      } catch (err) {
+        fallbackReason = `hosted MCP: ${(err as Error).message}`.slice(0, 200);
+      }
+    }
+    return { ...(await this.get(orderId)), source: 'paypal_orders_api', ...(fallbackReason ? { fallbackReason } : {}) };
+  }
 }
 
 export function summarise(order: Order): CapturedOrder {
@@ -109,6 +183,8 @@ export function summarise(order: Order): CapturedOrder {
     captureId: capture?.id ?? null,
     captureStatus: capture?.status ?? null,
     amountCents: value ? Math.round(Number(value) * 100) : null,
+    // payer.payer_id is deprecated in favour of payment_source.paypal.account_id (ContextMatic, Order model).
+    payerId: order.paymentSource?.paypal?.accountId ?? order.payer?.payerId ?? null,
   };
 }
 

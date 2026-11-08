@@ -38,9 +38,20 @@ export const AllowanceRequestSchema = z.strictObject({
 
 export type AllowanceRequestDecision =
   | { ok: true; label: string; capCents: number; expiresMs: number }
-  | { ok: false; code: 'INVALID_REQUEST' | 'UNKNOWN_FIELDS' | 'CAP_OUT_OF_RANGE' | 'AMOUNT_PRECISION' | 'GLOBAL_RATE_LIMIT'; message: string };
+  | { ok: false; code: 'INVALID_REQUEST' | 'UNKNOWN_FIELDS' | 'CAP_OUT_OF_RANGE' | 'AMOUNT_PRECISION' | 'GLOBAL_RATE_LIMIT' | 'LABEL_TAKEN'; message: string };
 
-export function evaluateAllowanceRequest(raw: unknown, ctx: { now: number; createdLast10Min: number }): AllowanceRequestDecision {
+/** Labels are compared without case (and after Unicode compatibility folding), so "Samaritan" and "samaritan" are the same name. */
+export const labelKey = (label: string) => label.trim().normalize('NFKC').toLowerCase();
+
+/** Short public handle for an allowance, shown next to its label so two agents can never look alike: "alid_3f9c2a". */
+export const allowanceHandle = (id: string) => id.slice(0, 11);
+
+/**
+ * `activeLabels`: labels of allowances that are neither revoked nor expired.
+ * A label can't be reused while another allowance holds it, so the name in
+ * the feed points at one agent.
+ */
+export function evaluateAllowanceRequest(raw: unknown, ctx: { now: number; createdLast10Min: number; activeLabels?: readonly string[] }): AllowanceRequestDecision {
   const parsed = AllowanceRequestSchema.safeParse(raw);
   if (!parsed.success) {
     const unknown = parsed.error.issues.find((i) => i.code === 'unrecognized_keys');
@@ -57,6 +68,9 @@ export function evaluateAllowanceRequest(raw: unknown, ctx: { now: number; creat
   if (Math.abs(cap * 100 - capCents) > 1e-6) return { ok: false, code: 'AMOUNT_PRECISION', message: 'cap_usd has more than 2 decimal places' };
   if (capCents < ALLOWANCE_LIMITS.minCapUsd * 100 || capCents > ALLOWANCE_LIMITS.maxCapUsd * 100) {
     return { ok: false, code: 'CAP_OUT_OF_RANGE', message: `cap_usd must be between $${ALLOWANCE_LIMITS.minCapUsd} and $${ALLOWANCE_LIMITS.maxCapUsd}.` };
+  }
+  if ((ctx.activeLabels ?? []).some((l) => labelKey(l) === labelKey(r.label))) {
+    return { ok: false, code: 'LABEL_TAKEN', message: 'An active allowance already uses that label (labels are compared without case). Choose another name.' };
   }
   if (ctx.createdLast10Min >= ALLOWANCE_LIMITS.globalPer10Min) {
     return { ok: false, code: 'GLOBAL_RATE_LIMIT', message: 'Too many allowances were created in the last 10 minutes. Try again shortly.' };
@@ -104,6 +118,16 @@ export type AllowanceState = {
   expiresMs: number;
   revokedMs: number | null;
 };
+
+/**
+ * Is this approval from the PayPal account the allowance is tied to?
+ * `boundHash` is null until the first donation under the allowance is approved;
+ * that approval ties it. Pure: the service stores the binding.
+ */
+export function payerCheck(boundHash: string | null, approverHash: string): 'bind' | 'match' | 'mismatch' {
+  if (boundHash === null) return 'bind';
+  return boundHash === approverHash ? 'match' : 'mismatch';
+}
 
 export type AllowanceRejection = 'ALLOWANCE_UNKNOWN' | 'ALLOWANCE_REVOKED' | 'ALLOWANCE_EXPIRED' | 'ALLOWANCE_EXCEEDED';
 

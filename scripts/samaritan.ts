@@ -109,10 +109,23 @@ async function main() {
         amountUsd: string;
         audit: { captured: { seq: number; hash: string } | null };
         poolSummary: { totalDisbursedUsd: string; recipientsCount: number };
+        paypal: { captureId: string | null };
+        approval?: { bySamePayPalAccount: boolean | null; note: string };
+        paypalConfirmed?: { status: string; amount: { value: string } | null; source: string; matchesReceipt: boolean } | null;
+        paypalConfirmedReason?: string;
       }>((await client.callTool({ name: 'get_receipt', arguments: { receipt_id: d.receiptId } })) as ToolResult);
       if (receipt.status === 'CAPTURED' && receipt.audit.captured) {
         const entry = receipt.audit.captured;
         say(`received: $${receipt.amountUsd} is in the pool (audit entry #${entry.seq})`);
+        const pc = receipt.paypalConfirmed;
+        if (pc) {
+          const via = pc.source === 'paypal_hosted_mcp' ? "PayPal's hosted MCP server" : "PayPal's Orders API";
+          say(pc.matchesReceipt ? `PayPal itself (${via}) reports the order ${pc.status}, $${pc.amount?.value ?? '?'}, same capture as the receipt` : `WARNING: PayPal (${via}) reports something different from the receipt`);
+        } else {
+          say(`could not ask PayPal about the order just now (${receipt.paypalConfirmedReason ?? 'no reason given'})`);
+        }
+        if (receipt.approval) say(receipt.approval.note);
+        if (receipt.paypal.captureId) say(`the person who approved can find capture ${receipt.paypal.captureId} in their own PayPal activity`);
 
         // 1. Recompute the chain myself from the public entries (algorithm: manifest receiptFormat.auditChain).
         const entriesUrl = manifest.endpoints.auditEntries?.url ?? `${BASE}/api/audit?limit=1000`;
@@ -132,6 +145,10 @@ async function main() {
 
         say('this shows my donation is recorded in the audit log; it does not show where each dollar goes, because the pool is shared');
         say(`so far Firstlight has paid $${receipt.poolSummary.totalDisbursedUsd} to ${receipt.poolSummary.recipientsCount} people from the pool`);
+        return;
+      }
+      if (receipt.status === 'PAYER_MISMATCH') {
+        say('held: it was approved by a different PayPal account than the one my allowance is tied to, so it was not captured or credited');
         return;
       }
       if (['CANCELED', 'FAILED', 'DENIED'].includes(receipt.status)) {

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
-import { DonationFeed, type FeedItem } from '@/ui/DonationFeed';
+import { DonationFeed, refundFromConsole, type FeedItem } from '@/ui/DonationFeed';
 import { Notice } from '@/ui/format';
 import { ApiError, call, useApi } from '@/ui/live';
 
@@ -215,7 +215,7 @@ samaritan: so far Firstlight has paid $680.00 to 7 people from the pool`}
             Shown under each allowance&apos;s label. Messages are shown as plain text and never reach the payout agent. Verifying recomputes the audit hash chain in your browser.
           </p>
         </div>
-        {feedError ? <p className="p-5 text-block-ink">{feedError.message}</p> : <DonationFeed items={agentDonations} onVerify={verifyInBrowser} />}
+        {feedError ? <p className="p-5 text-block-ink">{feedError.message}</p> : <DonationFeed items={agentDonations} onVerify={verifyInBrowser} onRefund={refundFromConsole} />}
       </section>
     </div>
   );
