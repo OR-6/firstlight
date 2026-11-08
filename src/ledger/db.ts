@@ -173,8 +173,11 @@ function migrate(db: Db): void {
   db.exec('CREATE INDEX IF NOT EXISTS donations_allowance ON donations(allowance_id)');
 }
 
-/** Ledger entry kinds. Refunds and reversals of donations are debits (negative cents). */
-export const LEDGER_KINDS = ['donation_credit', 'donation_refund', 'donation_reversal', 'payout_debit', 'payout_reversal', 'seed_credit'] as const;
+/**
+ * Ledger entry kinds. Refunds and reversals of donations are debits (negative cents).
+ * `payout_fee` is what PayPal charged for a payout batch (a debit; a later correction can be a credit).
+ */
+export const LEDGER_KINDS = ['donation_credit', 'donation_refund', 'donation_reversal', 'payout_debit', 'payout_reversal', 'payout_fee', 'seed_credit'] as const;
 const LEDGER_KINDS_SQL = LEDGER_KINDS.map((k) => `'${k}'`).join(',');
 
 function addColumn(db: Db, table: string, column: string, decl: string): void {
@@ -182,10 +185,10 @@ function addColumn(db: Db, table: string, column: string, decl: string): void {
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
 }
 
-/** Older databases had a CHECK on ledger_entries.kind without the donation refund/reversal kinds. Rebuild it. */
+/** Older databases had a CHECK on ledger_entries.kind without some of today's kinds (donation refunds, payout fees). Rebuild it. */
 function widenLedgerKinds(db: Db): void {
   const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ledger_entries'").get() as { sql: string } | undefined;
-  if (!row || row.sql.includes("'donation_refund'")) return;
+  if (!row || LEDGER_KINDS.every((k) => row.sql.includes(`'${k}'`))) return;
   db.transaction(() => {
     db.exec(`ALTER TABLE ledger_entries RENAME TO ledger_entries_old;
       CREATE TABLE ledger_entries (

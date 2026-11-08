@@ -187,6 +187,41 @@ export class Ledger {
     return norm;
   }
 
+  /**
+   * Book what PayPal says it charged for a payout batch (`batch_header.fees`), so the
+   * pool tracks the real PayPal balance. Idempotent per PayPal batch id: the same
+   * reported total books nothing. If PayPal later reports a different total (for
+   * example a fee given back on a returned item), only the difference is booked, as a
+   * numbered correction. Like a donation refund, the fee has already been taken, so it
+   * is booked even if it takes the pool below zero; the caller flags that.
+   */
+  bookPayoutFee(paypalBatchId: string, reportedFeeCents: number): { bookedCents: number; totalFeeCents: number; balanceAfterCents: number } {
+    if (!/^[A-Z0-9]{6,40}$/i.test(paypalBatchId)) throw new Error(`invalid payout_batch_id: ${paypalBatchId}`);
+    if (!Number.isSafeInteger(reportedFeeCents) || reportedFeeCents < 0) throw new RangeError(`fee must be a non-negative integer number of cents, got ${reportedFeeCents}`);
+    const tx = this.db.transaction(() => {
+      const prior = this.feeEntries(paypalBatchId);
+      const delta = reportedFeeCents - prior.feeCents;
+      if (delta !== 0) {
+        const ref = prior.entries === 0 ? `fee:${paypalBatchId}` : `fee:${paypalBatchId}:${prior.entries + 1}`;
+        this.db.prepare("INSERT INTO ledger_entries (kind, amount_cents, ref, created_ms) VALUES ('payout_fee', ?, ?, ?)").run(-delta, ref, this.clock());
+      }
+      return { bookedCents: delta, totalFeeCents: reportedFeeCents, balanceAfterCents: this.poolBalanceCents() };
+    });
+    return tx.immediate();
+  }
+
+  /** PayPal fees booked for one batch so far (0 if none). */
+  payoutFeeCents(paypalBatchId: string): number {
+    return this.feeEntries(paypalBatchId).feeCents;
+  }
+
+  private feeEntries(paypalBatchId: string): { entries: number; feeCents: number } {
+    const row = this.db
+      .prepare("SELECT COUNT(*) AS n, COALESCE(-SUM(amount_cents), 0) AS f FROM ledger_entries WHERE kind = 'payout_fee' AND (ref = ? OR ref LIKE ?)")
+      .get(`fee:${paypalBatchId}`, `fee:${paypalBatchId}:%`) as { n: number; f: number };
+    return { entries: row.n, feeCents: row.f };
+  }
+
   getBatchByDigest(verdictDigest: string): BatchRow | undefined {
     return this.db.prepare('SELECT * FROM payout_batches WHERE verdict_digest = ?').get(verdictDigest) as BatchRow | undefined;
   }
