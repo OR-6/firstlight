@@ -38,3 +38,13 @@ describe('residual-risk red team', async () => {
     for (const p of loadCorpus()) expect((await runPayload(p)).agentTextDelivered).toBe(false);
   });
 });
+
+describe('held-out sentinel set', () => {
+  it('is measured and reported, whatever the number', async () => {
+    const { heldoutSentinel } = await import('../src/redteam/scenarios');
+    const h = await heldoutSentinel();
+    expect(h.payloads).toBe(30);
+    expect(h.regexCaught).toBeGreaterThanOrEqual(0);
+    expect(Object.values(h.byGoal).reduce((t, g) => t + g.total, 0)).toBe(30);
+  });
+});

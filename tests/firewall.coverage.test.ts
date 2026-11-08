@@ -38,6 +38,7 @@ describe('R12 coverage floor', () => {
     const rule = r12(v).find((r) => r.reasonCode === 'TIER_BELOW_BAND');
     expect(rule?.status).toBe('warn');
     expect(rule?.detail).toContain('rcp_b120_vuln tier C (band allows A)');
+    expect(rule?.detail).toContain('They would get $80 less in total');
     expect(v.overall).toBe('REQUIRE_APPROVAL');
   });
 

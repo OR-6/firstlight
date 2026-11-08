@@ -59,7 +59,7 @@ export const AGENT_TOOLS: BetaTool[] = [
             properties: {
               recipientId: { type: 'string', description: 'Exactly as returned by list_registry_near.' },
               tier: { type: 'string', enum: ['A', 'B', 'C'] },
-              note: { type: 'string', description: "Message to the recipient in their locale, max 200 characters. No links, phone numbers, emails or requests to do anything." },
+              note: { type: 'string', description: "One-line draft for the human reviewer, in English, max 200 characters. Never sent: recipients get a fixed, pre-translated message." },
               why: { type: 'string', description: 'Reason for this tier, for the human reviewer.' },
             },
             required: ['recipientId', 'tier', 'note', 'why'],

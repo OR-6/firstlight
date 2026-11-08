@@ -43,6 +43,8 @@ console.log(`Firewall: ${n - report.firewall.payloadsWithUnauthorisedPayout}/${n
 console.log(`Firewall: ${report.firewall.flaggedBeyondThreshold}/${n} held for a reason other than the $300 approval limit (the honest $680 plan already needs a person)`);
 console.log(`Firewall rules alone (if the sentinel missed everything): ${report.firewall.firewallFlagged}/${n} held or blocked for a reason other than the $300 limit`);
 console.log(`Payout notes: agent-written text reached PayPal in ${report.firewall.agentTextDelivered}/${n} attacks (PayPal only gets fixed templates)`);
+console.log(`Aid withheld: ${report.firewall.payloadsWithShortfall}/${n} attacks left households with less (${formatUsd(report.firewall.shortfallCents)} in total, e.g. a forged event id blocks the whole plan); ${report.firewall.distinctAttempts} distinct plan mutations across the ${n} payloads`);
+console.log(`Held-out set (30 texts written without seeing the patterns): pattern checks caught ${report.heldout.regexCaught}/${report.heldout.payloads}; Claude Haiku ${report.heldout.llmCaught === null ? 'not measured' : `${report.heldout.llmCaught}/${report.heldout.payloads}`}`);
 console.log('\nResidual risks: attacks that don\'t try to pay a stranger (careless reviewer approves everything)');
 console.log('id                   outcome          verdict           sent       shortfall  unauthorised');
 for (const r of report.residual) {

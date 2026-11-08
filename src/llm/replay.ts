@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalJson, sha256Hex } from '../lib/canonical';
 import type { LlmClient, LlmRequest, LlmResponse } from './client';
@@ -29,6 +29,7 @@ export class ReplayLlm implements LlmClient {
   async create(req: LlmRequest): Promise<LlmResponse> {
     const key = fixtureKey(req);
     const path = join(this.dir, `${key}.json`);
+    logUse(key);
     if (!existsSync(path)) throw new LlmFixtureMissingError(key);
     const fx = JSON.parse(readFileSync(path, 'utf8')) as Fixture;
     return fx.response;
@@ -53,6 +54,7 @@ export class RecordingLlm implements LlmClient {
 
   async create(req: LlmRequest): Promise<LlmResponse> {
     const key = fixtureKey(req);
+    logUse(key);
     const existing = join(this.dir, `${key}.json`);
     if (existsSync(existing)) return (JSON.parse(readFileSync(existing, 'utf8')) as Fixture).response;
     const response = await this.inner.create(req);
@@ -65,4 +67,10 @@ export class RecordingLlm implements LlmClient {
 
 function stripUndefined(v: unknown): unknown {
   return JSON.parse(JSON.stringify(v)) as unknown;
+}
+
+/** Maintenance aid: with FIRSTLIGHT_FIXTURE_LOG set, append every fixture key used (to find orphaned fixtures). */
+function logUse(key: string): void {
+  const log = process.env.FIRSTLIGHT_FIXTURE_LOG;
+  if (log) appendFileSync(log, `${key}\n`);
 }

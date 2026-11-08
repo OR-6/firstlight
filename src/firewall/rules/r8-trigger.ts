@@ -6,6 +6,8 @@ import type { CorroborationObservation, FirewallContext, RuleResult } from '../t
  * R8 — the trigger is real.
  *  - event time after `now`                         → BLOCK
  *  - neither magnitude nor PAGER threshold met       → BLOCK
+ *  - magnitude met but PAGER expects little impact
+ *    (green or no alert)                             → WARN (basis risk: a person checks)
  *  - threshold met, enough independent sources agree → pass
  *  - agreement only via the non-independent fallback → WARN (degraded)
  *  - not enough sources agree                        → WARN (human checks)
@@ -25,6 +27,16 @@ export function r8Trigger(ctx: FirewallContext): RuleResult {
       'block',
       'TRIGGER_THRESHOLD_NOT_MET',
       `M${event.mag} < M${t.minMagnitude} and PAGER ${event.alert ?? 'none'} below ${t.minPagerAlert}`,
+    );
+  }
+
+  // Basis risk: a big offshore quake can pass the magnitude bar while USGS PAGER
+  // expects little impact on people. Pay automatically only with an impact signal.
+  if (!pagerAtLeast(event.alert, 'yellow')) {
+    return result(
+      'warn',
+      'TRIGGER_MAGNITUDE_ONLY',
+      `M${event.mag} meets the magnitude bar but PAGER is ${event.alert ?? 'not issued'}; USGS expects little impact, so a person checks`,
     );
   }
 

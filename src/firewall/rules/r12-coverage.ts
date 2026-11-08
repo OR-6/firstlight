@@ -1,4 +1,5 @@
 import { distanceKm } from '../geo';
+import { formatUsd } from '../money';
 import { maxAllowedTier, tierAbove } from '../tiers';
 import type { FirewallContext, ItemVerdict, RuleResult, Tier } from '../types';
 import { currentEventIds } from './shared';
@@ -48,16 +49,20 @@ export function r12Coverage(
   }
   const out: RuleResult[] = [];
   const inPlan = new Set(input.items.filter((i) => i.allowedTier !== null).map((i) => i.recipientId));
-  const omitted = eligible.filter((e) => !inPlan.has(e.recipientId)).map((e) => e.recipientId);
+  const usd = (c: number) => formatUsd(c).replace(/\.00$/, '');
+  const owed = (t: Tier) => ctx.config.tierAmountsCents[t];
+  const omittedRows = eligible.filter((e) => !inPlan.has(e.recipientId));
+  const omitted = omittedRows.map((e) => e.recipientId);
   if (omitted.length > 0) {
-    out.push(r('warn', 'ELIGIBLE_OMITTED', `${omitted.length} eligible household(s) left out of the plan: ${omitted.slice(0, 10).join(', ')}`));
+    const lost = omittedRows.reduce((t, e) => t + owed(e.maxTier), 0);
+    out.push(r('warn', 'ELIGIBLE_OMITTED', `${omitted.length} eligible household(s) left out of the plan: ${omitted.slice(0, 10).join(', ')}. They would get ${usd(lost)} less in total`));
   }
   const max = new Map(eligible.map((e) => [e.recipientId, e.maxTier]));
-  const under = input.items
-    .filter((i) => i.allowedTier !== null && max.has(i.recipientId) && tierAbove(max.get(i.recipientId)!, i.allowedTier))
-    .map((i) => `${i.recipientId} tier ${i.allowedTier} (band allows ${max.get(i.recipientId)})`);
+  const underRows = input.items.filter((i) => i.allowedTier !== null && max.has(i.recipientId) && tierAbove(max.get(i.recipientId)!, i.allowedTier));
+  const under = underRows.map((i) => `${i.recipientId} tier ${i.allowedTier} (band allows ${max.get(i.recipientId)})`);
   if (under.length > 0) {
-    out.push(r('warn', 'TIER_BELOW_BAND', `${under.length} household(s) planned below their band: ${under.slice(0, 10).join('; ')}`));
+    const lost = underRows.reduce((t, i) => t + owed(max.get(i.recipientId)!) - owed(i.allowedTier!), 0);
+    out.push(r('warn', 'TIER_BELOW_BAND', `${under.length} household(s) planned below their band: ${under.slice(0, 10).join('; ')}. They would get ${usd(lost)} less in total`));
   }
   if (out.length === 0) out.push(r('pass', 'ALL_ELIGIBLE_COVERED', `all ${eligible.length} eligible household(s) planned at their band`));
   return out;

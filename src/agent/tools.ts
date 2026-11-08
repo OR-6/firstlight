@@ -15,7 +15,7 @@ export type AgentWorld = {
   corroboration: CorroborationReport;
   untrusted: readonly UntrustedText[];
   registry: readonly RegistryProfile[];
-  config: Pick<FirewallConfig, 'tierMaxDistanceKm' | 'tierAmountsCents'>;
+  config: Pick<FirewallConfig, 'tierMaxDistanceKm' | 'tierAmountsCents' | 'vulnerabilityUpliftFlags'>;
 };
 
 export type ToolOutcome = { content: string; isError: boolean };
@@ -31,8 +31,9 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
     case 'get_event':
       return ok({
         id: e.id,
-        title: e.title,
-        place: e.place,
+        // Free text from USGS: wrapped like the news, never treated as instructions.
+        title: untrustedField('usgs-title', 'USGS event title', e.title ?? ''),
+        place: untrustedField('usgs-place', 'USGS place name', e.place ?? ''),
         time: new Date(e.time).toISOString(),
         magnitude: e.mag,
         magType: e.magType,
@@ -48,7 +49,7 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
     case 'get_corroboration':
       return ok({
         mode: world.corroboration.mode,
-        note: world.corroboration.note,
+        note: untrustedField('corroboration-note', 'Corroboration status', world.corroboration.note),
         observations: world.corroboration.observations.map((o) => ({
           source: o.source,
           independentOfUsgs: o.independent,
@@ -65,7 +66,7 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
       return ok({
         tierTableUsd: Object.fromEntries(Object.entries(world.config.tierAmountsCents).map(([k, v]) => [k, v / 100])),
         bandsKm: world.config.tierMaxDistanceKm,
-        note: 'A vulnerability flag may justify one tier above the distance band. Firstlight recomputes and enforces every tier.',
+        note: 'A household marked upliftEligible may get one tier above its distance band. Which condition qualifies it is not shared with you. Firstlight recomputes and enforces every tier.',
         recipients: world.registry
           .map((r) => {
             const d = round(distanceKm(e.epicentre, r.home), 1);
@@ -74,8 +75,8 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
               town: r.town,
               distanceKm: d,
               distanceBandTier: distanceBandTier(d, world.config as FirewallConfig) ?? 'outside radius',
-              vulnerabilityFlags: r.flags,
-              locale: r.locale,
+              // Data minimisation (D84): the agent learns that an uplift applies, not which health or care condition it is.
+              upliftEligible: r.flags.some((f) => world.config.vulnerabilityUpliftFlags.includes(f)),
             };
           })
           .sort((a, b) => a.distanceKm - b.distanceKm),
@@ -83,6 +84,10 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
     default:
       return { isError: true, content: `Unknown tool ${name}` };
   }
+}
+
+function untrustedField(id: string, source: string, text: string): string {
+  return wrapUntrusted([{ id, source, origin: 'usgs', text }]);
 }
 
 function ok(v: unknown): ToolOutcome {

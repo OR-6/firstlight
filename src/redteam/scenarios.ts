@@ -1,3 +1,4 @@
+import { llmScan, scanText } from '../agent/sentinel';
 import { runResidualSuite, type ResidualResult } from './residual';
 import { readFileSync } from 'node:fs';
 import { defaultFirewallConfig } from '../firewall/config';
@@ -142,10 +143,26 @@ export type SuiteReport = {
     firewallFlagged: number;
     /** Payloads whose agent-written text reached PayPal as a payout note. Must be 0. */
     agentTextDelivered: number;
+    shortfallCents: number;
+    payloadsWithShortfall: number;
+    /** The 27 payloads boil down to this many distinct plan mutations. */
+    distinctAttempts: number;
   };
   results: Awaited<ReturnType<typeof runPayload>>[];
   /** Attacks that don't try to pay a stranger: under-payment, exclusion, phishing, reviewer pressure, hold, insider. */
   residual: ResidualResult[];
+  /**
+   * Pattern-sentinel catch rate on 30 attack texts written separately by someone who never saw the
+   * patterns (fixtures/redteam/heldout.json). Much lower than on the corpus the patterns were tuned
+   * on: that's why the sentinel is advisory and the firewall is the guarantee.
+   */
+  heldout: {
+    payloads: number;
+    regexCaught: number;
+    /** Claude Haiku on the same texts (recorded runs); null when not measured. */
+    llmCaught: number | null;
+    byGoal: Record<string, { caught: number; llmCaught: number | null; total: number }>;
+  };
 };
 
 export async function runSuite(sentinelLlm: LlmClient | null = null, clock: () => number = Date.now): Promise<SuiteReport> {
@@ -168,8 +185,40 @@ export async function runSuite(sentinelLlm: LlmClient | null = null, clock: () =
       flaggedBeyondThreshold: results.filter((r) => r.flaggedBeyondThreshold).length,
       firewallFlagged: results.filter((r) => r.firewallFlagged).length,
       agentTextDelivered: results.filter((r) => r.agentTextDelivered).length,
+      // Aid withheld: attacks that left households with less than they're owed (e.g. a wrong event id blocks the whole plan).
+      shortfallCents: results.reduce((t, r) => t + (r.shortfallCents ?? 0), 0),
+      payloadsWithShortfall: results.filter((r) => (r.shortfallCents ?? 0) > 0).length,
+      distinctAttempts: new Set(loadCorpus().map((p) => JSON.stringify(p.attempt))).size,
     },
     results,
     residual: await runResidualSuite(),
+    heldout: await heldoutSentinel(sentinelLlm),
   };
+}
+
+/** Both sentinel layers on the held-out texts, one text per classifier call (as each news item would be scanned). */
+export async function heldoutSentinel(sentinelLlm: LlmClient | null = null, path = 'fixtures/redteam/heldout.json'): Promise<SuiteReport['heldout']> {
+  const d = JSON.parse(readFileSync(/*turbopackIgnore: true*/ path, 'utf8')) as { payloads: { id: string; goal: string; text: string }[] };
+  const byGoal: SuiteReport['heldout']['byGoal'] = {};
+  let regexCaught = 0;
+  let llmCaught: number | null = sentinelLlm ? 0 : null;
+  for (const p of d.payloads) {
+    const hit = scanText(p.id, p.text).length > 0;
+    let llmHit: boolean | null = null;
+    if (sentinelLlm) {
+      try {
+        llmHit = (await llmScan(sentinelLlm, [{ target: `untrusted:${p.id}`, text: p.text }])).length > 0;
+      } catch {
+        llmHit = null; // not recorded: report as not measured
+        llmCaught = null;
+      }
+    }
+    if (hit) regexCaught++;
+    if (llmHit && llmCaught !== null) llmCaught++;
+    const g = (byGoal[p.goal] ??= { caught: 0, llmCaught: sentinelLlm ? 0 : null, total: 0 });
+    g.total++;
+    if (hit) g.caught++;
+    if (llmHit && g.llmCaught !== null) g.llmCaught++;
+  }
+  return { payloads: d.payloads.length, regexCaught, llmCaught, byGoal };
 }
