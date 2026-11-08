@@ -38,6 +38,17 @@ export function normaliseItemStatus(raw: unknown): { status: ItemStatus; unknown
     : { status: 'PENDING', unknown: true };
 }
 
+export type BatchRow = {
+  id: number;
+  event_id: string;
+  plan_version: number;
+  paypal_request_id: string;
+  verdict_digest: string;
+  paypal_batch_id: string | null;
+  status: string;
+  created_ms: number;
+};
+
 export class InsufficientPoolError extends Error {
   constructor(
     readonly neededCents: number,
@@ -135,6 +146,28 @@ export class Ledger {
     });
     tx.immediate();
     return norm;
+  }
+
+  getBatchByDigest(verdictDigest: string): BatchRow | undefined {
+    return this.db.prepare('SELECT * FROM payout_batches WHERE verdict_digest = ?').get(verdictDigest) as BatchRow | undefined;
+  }
+
+  getBatch(id: number): BatchRow | undefined {
+    return this.db.prepare('SELECT * FROM payout_batches WHERE id = ?').get(id) as BatchRow | undefined;
+  }
+
+  batchItems(batchId: number): { event_id: string; recipient_id: string; amount_cents: number; status: string }[] {
+    return this.db
+      .prepare('SELECT event_id, recipient_id, amount_cents, status FROM payout_items WHERE batch_id = ? ORDER BY id')
+      .all(batchId) as { event_id: string; recipient_id: string; amount_cents: number; status: string }[];
+  }
+
+  setBatchStatus(id: number, status: string, paypalBatchId?: string): void {
+    if (paypalBatchId) {
+      this.db.prepare('UPDATE payout_batches SET status = ?, paypal_batch_id = COALESCE(paypal_batch_id, ?) WHERE id = ?').run(status, paypalBatchId, id);
+    } else {
+      this.db.prepare('UPDATE payout_batches SET status = ? WHERE id = ?').run(status, id);
+    }
   }
 
   /** Everything the firewall needs, as plain data. */

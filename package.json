@@ -14,9 +14,12 @@
     "typecheck": "tsc --noEmit",
     "fetch:usgs": "tsx scripts/fetch-usgs.ts",
     "paypal:check": "tsx --env-file=.env scripts/paypal-smoke-payout.ts",
-    "smoke:payout": "tsx --env-file=.env scripts/paypal-smoke-payout.ts"
+    "smoke:payout": "tsx --env-file=.env scripts/paypal-smoke-payout.ts",
+    "fl": "tsx --env-file=.env scripts/fl.ts",
+    "record:fixtures": "tsx --env-file=.env scripts/fl.ts assess --llm record"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "better-sqlite3": "^13.0.3",
     "zod": "^4.6.7"
   },

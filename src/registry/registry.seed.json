@@ -1,0 +1,13 @@
+{
+  "_comment": "SYNTHETIC recipients for the SANDBOX demo. Names are invented; home locations are town centres near the 2026-10-09 M7.7 Panama earthquake. No emails here: payee addresses live in the payee map, which only the payout executor reads.",
+  "recipients": [
+    { "recipientId": "rcp_01", "displayName": "Recipient 01", "town": "Macaracas", "home": { "lat": 7.7317, "lon": -80.5531 }, "locale": "es", "flags": [], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_02", "displayName": "Recipient 02", "town": "Tonosí", "home": { "lat": 7.4044, "lon": -80.4436 }, "locale": "es", "flags": ["sole_caregiver"], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_03", "displayName": "Recipient 03", "town": "Las Tablas", "home": { "lat": 7.7656, "lon": -80.2747 }, "locale": "en", "flags": [], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_04", "displayName": "Recipient 04", "town": "Chitré", "home": { "lat": 7.9606, "lon": -80.4297 }, "locale": "es", "flags": ["mobility_impaired"], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_05", "displayName": "Recipient 05", "town": "Santiago de Veraguas", "home": { "lat": 8.1, "lon": -80.9833 }, "locale": "ne", "flags": [], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_06", "displayName": "Recipient 06", "town": "Penonomé", "home": { "lat": 8.5187, "lon": -80.3576 }, "locale": "id", "flags": ["elderly_living_alone"], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_07", "displayName": "Recipient 07", "town": "Panama City", "home": { "lat": 8.9824, "lon": -79.5199 }, "locale": "ja", "flags": [], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" },
+    { "recipientId": "rcp_08", "displayName": "Recipient 08", "town": "Yaviza", "home": { "lat": 8.1569, "lon": -77.6928 }, "locale": "tr", "flags": [], "verified": true, "registeredAt": "2026-08-01T00:00:00Z" }
+  ]
+}

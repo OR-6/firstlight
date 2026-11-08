@@ -10,3 +10,6 @@ node_modules/
 coverage/
 redteam-report.json
 .DS_Store
+config/payees.sandbox.json
+fixtures/llm/.recording/
+data/

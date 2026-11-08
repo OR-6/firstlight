@@ -64,6 +64,37 @@ function migrate(db: Db): void {
       UNIQUE (event_id, recipient_id)       -- R6 again, enforced by the database
     );
 
+    -- One row per agent assessment; versions increase per event (SPEC §6 "plans (versioned)").
+    CREATE TABLE IF NOT EXISTS plans (
+      id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_id           TEXT NOT NULL,
+      version            INTEGER NOT NULL,
+      status             TEXT NOT NULL CHECK (status IN ('assessed','agent_failed')),
+      raw_plan           TEXT,                 -- exactly what the agent submitted (untrusted)
+      agent_json         TEXT NOT NULL,        -- model, turns, tool steps
+      sentinel_json      TEXT NOT NULL,
+      corroboration_json TEXT NOT NULL,
+      llm_mode           TEXT NOT NULL,
+      created_ms         INTEGER NOT NULL,
+      UNIQUE (event_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS verdicts (
+      plan_id       INTEGER PRIMARY KEY REFERENCES plans(id),
+      digest        TEXT NOT NULL UNIQUE,
+      overall       TEXT NOT NULL,
+      verdict_json  TEXT NOT NULL,
+      created_ms    INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS approvals (
+      plan_id       INTEGER PRIMARY KEY REFERENCES plans(id),  -- one decision per plan, final
+      decision      TEXT NOT NULL CHECK (decision IN ('approve','deny')),
+      approver      TEXT NOT NULL,
+      reason        TEXT NOT NULL,
+      decided_ms    INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS audit_log (
       seq           INTEGER PRIMARY KEY,
       ts_ms         INTEGER NOT NULL,
