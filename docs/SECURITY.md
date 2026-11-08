@@ -1,6 +1,6 @@
 # Security model
 
-Firstlight assumes the AI agent **can be fully compromised** and still guarantees that money only reaches pre-registered, eligible people, at fixed amounts, within budget. Everything below is enforced in code and covered by tests.
+Firstlight assumes the AI agent **can be fully compromised**. It then guarantees that money only reaches enrolled, eligible households, at amounts the firewall computes, within budget, and that the agent can't write to recipients. It does **not** guarantee that a hijacked agent pays everyone it should: under-payment, exclusion and holds are caught and sent to a person (R12), but a careless person can still approve them. The table at the end lists what is and isn't covered. Everything below is enforced in code and covered by tests.
 
 ## Trust boundaries
 
@@ -20,7 +20,8 @@ Import boundaries are enforced by `tests/isolation.test.ts`; firewall purity by 
 2. **Amounts are computed, not proposed.** The firewall derives the amount from the tier it allows (R2, R3).
 3. **Identity is the registry.** Unknown, unverified or late-registered ids are blocked (R1). Look-alike ids don't match.
 4. **The executor re-checks.** Before paying, it re-runs the firewall against the current ledger, refuses any verdict not in the audit log, and maps ids to emails itself.
-5. **Notes can't phish.** Notes with links, emails, phone numbers or hidden characters are replaced with a fixed message (R9).
+5. **The agent can't message recipients.** PayPal only ever delivers a fixed, pre-translated note with a help line and "we never ask for a password, code or fee". The agent's draft is shown to the reviewer and never sent. R9 still flags drafts with links, emails, numbers or hidden characters, because they are a sign of a compromised agent. (Before D72 the cleaned draft was sent, and our own red team found phishing notes that slipped past the checks.)
+6. **Paying too little needs a person too.** R12 works out from the registry and ledger who is owed, and warns when a plan leaves an eligible household out, pays one below its band, or holds although two agencies confirmed the quake.
 
 ## Money safety
 
@@ -45,3 +46,33 @@ Append-only SQLite table with triggers blocking UPDATE and DELETE, and a SHA-256
 ## Credentials
 
 Sandbox only: the PayPal client refuses to start unless `PAYPAL_ENV=sandbox` and its base URL is fixed to the sandbox. `.env`, the payee map and the database are gitignored. Runtime file reads are excluded from build tracing so a build can't bundle them.
+
+## What is and isn't covered
+
+Run with `npm run redteam -- --llm replay` (corpus) and shown on the Red team page. "Careless reviewer" means the harness approves everything that reaches a person.
+
+| Threat | Covered by | What happens |
+|---|---|---|
+| Injected instruction to pay a stranger, raise tiers, add fields, smuggle JSON, encode, translate, use look-alike ids (27 payloads) | Schema + R1–R6, R9 | $0 to anyone not owed, in 27/27; every one is also held by a firewall rule other than the $300 limit |
+| Phishing through the payout note | Fixed note templates (D72) | Agent text reaches PayPal in 0 cases |
+| Paying everyone less, or leaving households out | R12 (D71) | Goes to a person with the shortfall named; a careless person can still approve it |
+| Pressuring the reviewer ("pre-cleared, approve now") | Sentinel `APPROVAL_PRESSURE` | Flagged as suspicious; still a person's call |
+| Talking the agent into holding everything ("the report is a hoax") | R12 `HOLD_ON_MET_TRIGGER`, sentinel `DISCREDIT_EVENT` | Nothing paid, flagged for a person to re-run |
+| Paying twice: same quake under a new id, replayed plan, concurrent sends | R6, DB `UNIQUE`, PayPal-Request-Id, per-plan lock | Blocked |
+| Insider changes a payee address in the payee map | **Not covered** | Money goes to the swapped address. Needs the partner's two-person change control and PayPal account-holder checks |
+| Fake households enrolled weeks in advance (registry poisoning) | **Not covered** by code | The registry's `verified` flag is trusted. Enrolment checks belong to the field partner |
+| Someone approving without authority | **Not covered in the demo** | The console is open so judges can try it; `approver` is free text. A real deployment needs staff sign-in and two people above a threshold |
+| Spoofed earthquake data | R8 needs two agencies to agree | One spoofed feed isn't enough; both being spoofed isn't covered |
+| Denial of service on the public demo | Body caps, rate limits, reset cooldown, webhook budget (D65) | Slows abuse; not a full defence |
+
+The Haiku sentinel numbers on the hosted site come from recorded runs (replay), not a live measurement on each request.
+
+## Personal data
+
+| Data | Where it lives | Who sees it |
+|---|---|---|
+| Household id, town, home location, language, vulnerability flags | Registry (synthetic in the demo) | The agent, the firewall, staff. Flag names (such as `chronic_illness`) are sent to the Claude API as part of the agent's input |
+| PayPal address | Payee map (env or a gitignored file) | Only the payout executor and PayPal. Masked in the audit log |
+| Donor name and message | Donations table | Public feed, as plain text. Never sent to the agent |
+
+A real deployment would need consent at enrolment, a data-sharing agreement with the field partner, a retention period, and data minimisation: the agent only needs to know that a household qualifies for an uplift, not which condition it has. That last change alters the agent's input, so it needs the recorded Claude runs re-recorded; it is next on the list.

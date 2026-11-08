@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { BatchView } from '@/server/views';
 import { Notice, StatusChip, itemStatus, usd, when, LoadError, Loading } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
+import { SandboxEvidence } from '@/ui/SandboxEvidence';
 import { gridTheme } from '@/ui/PlanGrid';
 
 type Item = BatchView['items'][number];
@@ -105,6 +106,7 @@ export default function PayoutsPage() {
       {batches.map((b) => (
         <Batch key={b.id} b={b} />
       ))}
+      <SandboxEvidence />
     </div>
   );
 }

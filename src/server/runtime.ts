@@ -134,9 +134,23 @@ export async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
 
 const executions: number[] = [];
 
-/** Give back a slot when the request was refused before anything reached PayPal. */
-export function refundExecutionSlot(): void {
-  executions.pop();
+/** Give back exactly the slot this request took, when it was refused before anything reached PayPal. */
+export function refundExecutionSlot(slot: number): void {
+  const i = executions.indexOf(slot);
+  if (i >= 0) executions.splice(i, 1);
+}
+
+const executing = new Set<number>();
+
+/** One execute per plan at a time in this process (PayPal idempotency is the backstop, not the plan). */
+export async function withPlanLock<T>(planId: number, fn: () => Promise<T>): Promise<T | 'BUSY'> {
+  if (executing.has(planId)) return 'BUSY';
+  executing.add(planId);
+  try {
+    return await fn();
+  } finally {
+    executing.delete(planId);
+  }
 }
 
 let inflight = 0;
@@ -168,12 +182,16 @@ export function markReset(now = Date.now()): void {
  * Public-demo guard: real sandbox payout batches per rolling hour, across all
  * visitors and demo resets (the firewall's own R7 limit resets with the DB).
  */
-export function takeExecutionSlot(now = Date.now()): boolean {
+/** Take a payout slot; returns its token (pass it to refundExecutionSlot) or null when the hourly cap is reached. */
+export function takeExecutionSlot(now = Date.now()): number | null {
   const limit = Number(process.env.EXECUTE_LIMIT_PER_HOUR ?? 6);
   while (executions.length && executions[0]! < now - 3_600_000) executions.shift();
-  if (executions.length >= limit) return false;
-  executions.push(now);
-  return true;
+  if (executions.length >= limit) return null;
+  // Unique token even for two requests in the same millisecond.
+  let slot = now;
+  while (executions.includes(slot)) slot += 1e-3;
+  executions.push(slot);
+  return slot;
 }
 
 /** Poll a submitted batch every 2 s until it settles (fallback when no webhook reaches us). */
