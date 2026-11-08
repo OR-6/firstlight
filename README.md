@@ -11,7 +11,7 @@ The model proposes; the code disposes.
 
 **Who it's for.** Cash-programme leads at aid organisations (a Red Cross national society, a cash NGO) that already enrol households through field partners.
 
-**What it does.** When two seismic agencies confirm a strong quake near enrolled households, an AI agent reads the agency reports and drafts who gets which tier. A deterministic firewall recomputes every amount and checks the plan, a person approves anything unusual, and PayPal Payouts sends it. Measured in the sandbox: **$680 to 7 households about 30 seconds after the batch is sent.** Donors, both people and other AI agents, fund the pool through PayPal (Orders v2).
+**What it does.** When two seismic agencies confirm a strong quake near enrolled households, an AI agent reads the agency reports and drafts who gets which tier. A deterministic firewall recomputes every amount and checks the plan, a person approves anything unusual, and PayPal Payouts sends it. Measured in the sandbox: **$680 to 7 households about 25 seconds after the batch is sent.** Donors, both people and other AI agents, fund the pool through PayPal (Orders v2).
 
 **Why it's safe.** The agent's output has no field for an email, an amount or an account, and PayPal only delivers fixed, pre-translated notes. So even a fully hijacked agent can't pay anyone who isn't owed, can't pay more than the tier table allows, and can't write a word to recipients: 27 injection attacks against an agent we scripted to obey every one moved $0 to anyone not owed. If it pays someone less or leaves them out, a person sees exactly who and how many dollars; what isn't covered is [listed honestly](docs/SECURITY.md#what-is-and-isnt-covered).
 

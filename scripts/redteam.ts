@@ -4,8 +4,8 @@
  * payload, a careless approver, and a simulated PayPal endpoint.
  *
  *   npm run redteam                    # regex sentinel only (no API key needed)
- *   npm run redteam -- --llm replay    # + recorded Claude Haiku sentinel results
- *   npm run redteam -- --llm record    # + live Haiku sentinel, recording fixtures (needs ANTHROPIC_API_KEY)
+ *   npm run redteam -- --llm replay    # + recorded classifier-model sentinel results
+ *   npm run redteam -- --llm record    # + live classifier-model sentinel, recording fixtures (needs ANTHROPIC_API_KEY)
  *
  * Writes redteam-report.json. Exits non-zero if ANY money would reach an unauthorised payee.
  */
@@ -35,8 +35,8 @@ console.log(`\nPayloads: ${n}`);
 console.log(`Sentinel (regex): ${report.sentinel.regexCaught}/${n} flagged (${pct(report.sentinel.regexCaught)})`);
 console.log(
   report.sentinel.llmCaught === null
-    ? 'Sentinel (Claude Haiku): not measured (run with --llm replay or --llm record)'
-    : `Sentinel (Claude Haiku): ${report.sentinel.llmCaught}/${report.sentinel.llmMeasured} flagged`,
+    ? 'Sentinel (classifier model): not measured (run with --llm replay or --llm record)'
+    : `Sentinel (classifier model): ${report.sentinel.llmCaught}/${report.sentinel.llmMeasured} flagged`,
 );
 console.log(`Sentinel (either layer): ${report.sentinel.eitherCaught}/${n} flagged (${pct(report.sentinel.eitherCaught)})`);
 console.log(`Firewall: ${n - report.firewall.payloadsWithUnauthorisedPayout}/${n} attacks moved $0 to unauthorised payees (total unauthorised: ${formatUsd(report.firewall.unauthorisedCents)})`);
@@ -44,7 +44,7 @@ console.log(`Firewall: ${report.firewall.flaggedBeyondThreshold}/${n} held for a
 console.log(`Firewall rules alone (if the sentinel missed everything): ${report.firewall.firewallFlagged}/${n} held or blocked for a reason other than the $300 limit`);
 console.log(`Payout notes: agent-written text reached PayPal in ${report.firewall.agentTextDelivered}/${n} attacks (PayPal only gets fixed templates)`);
 console.log(`Aid withheld: ${report.firewall.payloadsWithShortfall}/${n} attacks left households with less (${formatUsd(report.firewall.shortfallCents)} in total, e.g. a forged event id blocks the whole plan); ${report.firewall.distinctAttempts} distinct plan mutations across the ${n} payloads`);
-console.log(`Held-out set (30 texts written without seeing the patterns): pattern checks caught ${report.heldout.regexCaught}/${report.heldout.payloads}; Claude Haiku ${report.heldout.llmCaught === null ? 'not measured' : `${report.heldout.llmCaught}/${report.heldout.payloads}`}`);
+console.log(`Held-out set (30 texts written without seeing the patterns): pattern checks caught ${report.heldout.regexCaught}/${report.heldout.payloads}; classifier model ${report.heldout.llmCaught === null ? 'not measured' : `${report.heldout.llmCaught}/${report.heldout.payloads}`}`);
 console.log('\nResidual risks: attacks that don\'t try to pay a stranger (careless reviewer approves everything)');
 console.log('id                   outcome          verdict           sent       shortfall  unauthorised');
 for (const r of report.residual) {

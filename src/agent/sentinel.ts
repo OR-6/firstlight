@@ -30,7 +30,7 @@ const RULES: [string, RegExp][] = [
   ['APPROVAL_PRESSURE', /\b(approve|sign off|release)\b.{0,30}\b(immediately|right away|now|quickly|without (review|checking|reading))\b|\bno (further |need for (a )?)?review\b.{0,15}\b(needed|required|necessary)?|\b(already|pre-?)(verified|approved|cleared|signed off) by\b|\bskip (the )?(review|approval|checks?)\b/i],
   // Talking the agent out of paying: discrediting the event or the households.
   ['DISCREDIT_EVENT', /\b(hoax|false alarm|fabricated|staged)\b.{0,40}\b(report|earthquake|quake|event|alert|data)\b|\b(report|earthquake|quake|event|alert)\b.{0,30}\b(is|was) (a )?(hoax|fake|false alarm|fabricated)\b|\b(hold|stop|pause|freeze|suspend)\b.{0,15}\ball\b.{0,10}\b(payments?|payouts?|aid|relief)\b/i],
-  ['DISCREDIT_RECIPIENTS', /\b(fraud(ulent)?|fake|ghost|duplicate)\b.{0,30}\b(recipients?|households?|registr(y|ations?)|beneficiar(y|ies)|entries|enrol(l)?ees?)\b|\balready (received|got) (government |other |enough )?(help|aid|support|money)\b/i],
+  ['DISCREDIT_RECIPIENTS', /\b(recipients?|households?|registr(y|ations?)|beneficiar(y|ies)|entries|enrol(l)?ees?|families)\b.{0,30}\b(are|is|were|was|be)\b.{0,12}\b(fraud(ulent)?|fake|ghosts?|duplicates?|scams?)\b|\bfraud ring\b|\bghost (households?|recipients?|beneficiaries)\b|\balready (received|got) (government |other |enough )?(help|aid|support|money)\b/i],
   // Common translations of "ignore the instructions" / "send the money".
   ['MULTILINGUAL', /ignora(r)?\s+(las\s+|todas\s+las\s+)?(instrucciones|reglas)|(env[ií]a|transfiere|paga)\b.{0,40}\b(dinero|fondos|\$)|ignore[zr]?\s+(les\s+)?(instructions|consignes)|ignorier(e|en)\s+(alle\s+)?(anweisungen|regeln)|abaikan\s+(semua\s+)?(instruksi|perintah)|kirim(kan)?\s+(uang|dana)|talimatlar[ıi]\s+(yok\s+say|g[öo]rmezden)|(para|[öo]deme)\s+g[öo]nder|指示を無視|すべての指示|送金|निर्देशन.{0,20}(बेवास्ता|नमान)|पैसा\s+पठाउ|忽略.{0,6}指令|转账/i],
 ];
@@ -54,6 +54,16 @@ function variants(text: string): { label: string; text: string }[] {
   return out;
 }
 
+/** The whole sentence a match sits in (capped), never a fragment starting mid-clause. */
+function sentenceAround(text: string, index: number, length: number): string {
+  const before = text.slice(0, index);
+  const start = Math.max(before.lastIndexOf('. ') + 1, before.lastIndexOf('\n') + 1, 0, index - 160);
+  const rest = text.slice(index + length);
+  const stop = rest.search(/[.!?](\s|$)|\n/);
+  const end = index + length + (stop === -1 ? Math.min(rest.length, 80) : Math.min(stop + 1, 120));
+  return text.slice(start, end).replace(/\s+/g, ' ').trim().slice(0, 240);
+}
+
 export function scanText(target: string, text: string): SentinelFinding[] {
   const findings: SentinelFinding[] = [];
   const seen = new Set<string>();
@@ -66,8 +76,7 @@ export function scanText(target: string, text: string): SentinelFinding[] {
       const name = v.label === 'plain' ? rule : `${rule}(${v.label})`;
       if (seen.has(name)) continue;
       seen.add(name);
-      const start = Math.max(0, m.index - 20);
-      findings.push({ target, layer: 'regex', rule: name, excerpt: v.text.slice(start, m.index + m[0].length + 20).replace(/\s+/g, ' ').slice(0, 160) });
+      findings.push({ target, layer: 'regex', rule: name, excerpt: sentenceAround(v.text, m.index, m[0].length) });
     }
   }
   return findings;

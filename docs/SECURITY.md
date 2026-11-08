@@ -6,7 +6,7 @@ Firstlight assumes the AI agent **can be fully compromised**. It then guarantees
 
 | Component | Trusted with | Never sees |
 |---|---|---|
-| Agent (LLM) | Event data, untrusted text (wrapped), registry ids, distances, flags, locales | Emails, amounts, ledger, PayPal, credentials |
+| Agent (LLM) | Event data, untrusted text (wrapped), registry ids, towns, distances, an `upliftEligible` yes/no | Emails, amounts, ledger, PayPal, credentials |
 | Sentinel (patterns + a classifier model) | Untrusted text and the agent's free text | Anything it could act on; advisory only |
 | Firewall | Plan (parsed from `unknown`), event, corroboration, registry, ledger snapshot, config | I/O of any kind; it is pure |
 | Payout executor | Firewall verdict, payee map, PayPal client | The agent |
@@ -57,7 +57,7 @@ Run with `npm run redteam -- --llm replay` (corpus) and shown on the Red team pa
 | Phishing through the payout note | Fixed note templates (D72) | Agent text reaches PayPal in 0 cases |
 | Paying everyone less, or leaving households out | R12 (D71) | Goes to a person with the shortfall named; a careless person can still approve it |
 | Pressuring the reviewer ("pre-cleared, approve now") | Sentinel `APPROVAL_PRESSURE` | The exact phrasing is flagged; paraphrases mostly aren't (the pattern layer caught 7 of 30 held-out texts, the classifier model 26 of 30). Still a person's call |
-| Talking the agent into holding everything ("the report is a hoax"), or a forged event id that blocks the plan | R12 `HOLD_ON_MET_TRIGGER`, sentinel `DISCREDIT_EVENT` | Nothing paid, flagged for a person to re-run. A feed that stays poisoned keeps blocking: availability isn't guaranteed |
+| Talking the agent into holding everything ("the report is a hoax"), or a forged event id that blocks the plan | R12 `HOLD_ON_MET_TRIGGER`, sentinel `DISCREDIT_EVENT` | Nothing paid by the agent's plan; a person can have the firewall draft its own plan of everyone owed (D91), so a poisoned feed can't withhold aid indefinitely. A person still has to act |
 | Paying twice: same quake under a new id, replayed plan, concurrent sends | R6, DB `UNIQUE`, PayPal-Request-Id, per-plan lock | Blocked |
 | Insider changes a payee address in the payee map | **Not covered** | Money goes to the swapped address. Needs the partner's two-person change control and PayPal account-holder checks |
 | Fake households enrolled weeks in advance (registry poisoning) | **Not covered** by code | The registry's `verified` flag is trusted. Enrolment checks belong to the field partner |

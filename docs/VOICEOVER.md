@@ -21,7 +21,7 @@ After an earthquake, relief cash usually takes weeks and an application form. Ea
 
 ## vo_02: One household, one quake (0:16–0:38, about 55 words)
 
-Take this household in Chitré, Panama: an older woman with limited mobility, enrolled in August by a local partner. On the ninth of October a magnitude seven point seven earthquake hits. Two seismic agencies agree on it, and an AI agent drafts payouts for the seven enrolled households nearby, using rules the programme agreed before the quake.
+Take this household in Chitré, Panama: a woman with limited mobility, enrolled in August by a local partner. On the ninth of October a magnitude seven point seven earthquake hits. Two seismic agencies agree on it, and an AI agent drafts payouts for the seven enrolled households nearby, using rules the programme agreed before the quake.
 
 ## vo_03: The firewall (0:38–1:00, about 60 words)
 

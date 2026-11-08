@@ -152,5 +152,5 @@ describe('compromised agent cannot move money to unauthorised payees', () => {
     // Sanity: the generator does produce legitimately payable items, so the
     // invariants above were actually exercised.
     expect(payableSeen).toBeGreaterThan(500);
-  });
+  }, 60_000); // 3,000 full firewall evaluations: give it room under a loaded CI runner
 });

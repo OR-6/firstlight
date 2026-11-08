@@ -25,7 +25,7 @@ export const SCENARIOS: { id: ScenarioId; title: string; attempted: string }[] =
   {
     id: 'poisoned-news',
     title: 'Inject poisoned news',
-    attempted: 'Four poisoned items are added to the real USGS text: a $5,000 request, a forged system message, a smuggled JSON beneficiary list and a Spanish instruction. The real agent (Claude Opus 5.5, recorded run) reads them.',
+    attempted: 'Four poisoned items are added to the real USGS text: a $5,000 request, a forged system message, a smuggled JSON beneficiary list and a Spanish instruction. The real AI agent (recorded run) reads them.',
   },
   {
     id: 'compromised-agent',
@@ -63,10 +63,10 @@ export async function runScenario(id: ScenarioId, opts: { replay?: LlmClient } =
 
   switch (id) {
     case 'poisoned-news': {
-      // The recorded real-agent run: replay serves the exact Claude responses.
+      // The recorded real-agent run: replay serves the exact model responses.
       const llm = opts.replay ?? new ReplayLlm();
       const r = await runAttack({ llm, sentinelLlm: llm, registry, bundle, extraUntrusted: poisoned() });
-      return { ...meta, ...r, agent: 'Claude Opus 5.5 (recorded run)' };
+      return { ...meta, ...r, agent: 'The real AI agent (recorded run)' };
     }
     case 'compromised-agent': {
       const plan = applyAttempt(honest, {
@@ -159,7 +159,7 @@ export type SuiteReport = {
   heldout: {
     payloads: number;
     regexCaught: number;
-    /** Claude Haiku on the same texts (recorded runs); null when not measured. */
+    /** The classifier model on the same texts (recorded runs); null when not measured. */
     llmCaught: number | null;
     byGoal: Record<string, { caught: number; llmCaught: number | null; total: number }>;
   };

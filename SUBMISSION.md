@@ -39,7 +39,7 @@ An AI agent could make that call in minutes. But nobody should hand a language m
 - **An AI agent drafts the plan.** It decides whether the trigger is genuinely met, explains why, assigns each enrolled household a tier by distance with one tier up for a vulnerability, and flags anything a person should look at.
 - **A deterministic payment firewall decides.** It recomputes eligibility and every amount itself, enforces per-person and per-event caps, blocks duplicates of the same disaster, and checks the opposite direction too: a plan that leaves an eligible household out or pays one too little can't go out automatically; the reviewer is shown who, and how much they'd lose (rule R12).
 - **PayPal pays.** Approved plans go out as one **PayPal Payouts** batch; signature-verified **webhooks** drive live status. Recipients get a fixed, pre-translated note: what the money is, that nothing is needed, to ask their local relief partner with questions, and that nobody will ask for a password, code or fee. The agent can't write to them, so it can't phish them.
-- **People and other AI agents fund the pool** through **PayPal Orders v2**. Any MCP client can donate, but it can't spend on its own: each donation is an order a person approves on PayPal, inside an allowance (label, cap, expiry) the server enforces. Each allowance is tied to the one PayPal account that approves its first payment; anything approved by another account isn't captured. Every receipt is confirmed live with PayPal through PayPal's own hosted MCP server, carries the capture id the donor can match in their PayPal activity, and the agent recomputes the audit hash chain itself.
+- **People and other AI agents fund the pool** through **PayPal Orders v2**. Any MCP client can donate, but it can't spend on its own: each donation is an order a person approves on PayPal, inside an allowance (label, cap, expiry) the server enforces. Each allowance is tied to the one PayPal account that approves its first payment; anything approved by another account isn't captured. Every receipt asks PayPal what it reports for the order right now, through PayPal's hosted MCP server (read-only `get_order`) with the Orders API as fallback, and says which one answered; carries the capture id the donor can match in their PayPal activity, and the agent recomputes the audit hash chain itself.
 - **A Red Team page anyone can run**: 27 injection attacks against an agent we scripted to obey every one ($0.00 reached anyone not owed), and six quieter attacks (underpaying, leaving people out, phishing through the note, an insider swapping a payee) shown with their real outcome, including the one we don't stop.
 
 ### How we built it
@@ -52,7 +52,7 @@ An AI agent could make that call in minutes. But nobody should hand a language m
 - **Stack:** Next.js and TypeScript, SQLite, AG Grid, Leaflet, hosted on Render. A pure firewall (no I/O, no clock, no LLM), tested by import-graph checks.
 - **Design:** an operations console in the language of road signs (Overpass, guide-sign green, warning-yellow diamonds, red octagons). Status reads by shape as well as colour, and every household opens to a plain-English list of each firewall check.
 - **Replay mode:** on the hosted demo the recorded agent run is replayed, so you can try the whole flow, including real sandbox payouts, without keys of your own. Locally, assessing and the red team need no keys; paying needs PayPal sandbox credentials.
-- **Honest limits:** in the demo anyone can approve (no sign-in); a real deployment needs staff sign-in and two approvers above a threshold.
+- **Honest limits:** in the demo anyone can approve, send payouts or refund a donation (no sign-in); a real deployment needs staff sign-in and two approvers above a threshold.
 
 ### Challenges we ran into
 - Designing for a *compromised* agent, not a well-behaved one: the test harness swaps in a script that obeys every injected instruction, and a reviewer who approves everything.
@@ -64,19 +64,18 @@ An AI agent could make that call in minutes. But nobody should hand a language m
 - Real sandbox payouts: batch `9GE626X9SA3NE` paid $680 to seven sandbox accounts in about 25 seconds, confirmed by seven signature-verified `PAYMENT.PAYOUTS-ITEM.SUCCEEDED` webhooks.
 - Any MCP client can donate with no SDK: `tools/list` publishes the enforced limits, refusals come back as typed codes (`ALLOWANCE_UNKNOWN`, `ALLOWANCE_EXCEEDED`), and our example agent recomputes every audit hash itself.
 - An honest residual-risk table: a reviewer who approves without reading would still let under-payment through (the page shows the dollar shortfall), and an insider swapping a payee address is not stopped. We say so on the page.
-- Over 480 tests that run in about a second, including a seeded property test over 3,000 compromised-agent plans and an import-graph test that fails if the firewall ever reads the clock, environment, database, network or an LLM.
+- Over 560 tests, including a seeded property test over 3,000 compromised-agent plans, and purity tests (a source scan plus a walk of everything the firewall imports) that fail if it ever reads the clock, environment, database, network or an LLM. CI runs them, lint and the red team on every push.
 
 ### What we learned
 For AI agents that move money, "make the model safer" is the wrong place to put the guarantee. The model should propose; deterministic code should dispose. Limiting what the agent can *express* does more than trying to detect what it was told.
 
 ### What's next
-- Allowances tied to a PayPal-verified account: the person who sets an agent's cap signs in with PayPal, and only that account can approve the agent's payments.
+- Sign in with PayPal when creating an allowance, so the cap is bound to a verified PayPal customer up front, not at its first approved payment.
 - The payout firewall as an MCP tool, so any agent can dry-run a PayPal Payouts batch against R1–R12 before it sends anything.
 - Bands from USGS ShakeMap intensity at each home instead of distance alone, and enrolment on top of an existing government social registry (shock-responsive social protection).
 - A pilot design with a cash-programme partner in Central America: transfer values set from the local minimum expenditure basket and household size, and delivery through whatever rail households have (PayPal, Venmo, or a licensed partner's cash-out).
 - Data minimisation: the agent only needs to know a household qualifies for an uplift, not which condition it has.
 - More hazards (floods, cyclones, heat) through adapters that feed the same firewall.
-- Real intensity data (USGS ShakeMap) for finer eligibility zones.
 - Working with licensed disbursement partners and local aid organisations. A real deployment needs identity verification and sanctions screening, which a hackathon sandbox can't demonstrate.
 
 ### Limitations (also in the README)
@@ -91,7 +90,7 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 ## 6. Tools used and how (the form asks for this)
 
 - **An LLM (via API)** — the runtime agent: it checks the trigger is met, assigns tiers and flags anything a person should see; it never writes what recipients receive. A small classifier model is the advisory injection sentinel.
-- **PayPal Payouts API** — relief disbursement. **Orders v2** (PayPal Server SDK) — donations. **Webhooks** — payout batch and item status, plus donation capture, pending, denied, refund and reversal events, each checked with verify-webhook-signature and de-duplicated. **PayPal sandbox** — all testing. **PayPal's hosted MCP server** (sandbox, read-only `get_order` only) confirms every donation receipt live with PayPal, with the Server SDK as fallback; PayPal's toolkit has no Payouts call, so payouts use the REST API behind the firewall. **Transaction Search** (Server SDK) for the balance check and reconciliation when the app has the scope.
+- **PayPal Payouts API** — relief disbursement. **Orders v2** (PayPal Server SDK) — donations. **Webhooks** — payout batch and item status, plus donation capture, pending, denied, refund and reversal events, each checked with verify-webhook-signature and de-duplicated; payouts fall back to 2 s polling if no webhook arrives. **PayPal sandbox** — all testing. **PayPal's hosted MCP server** (sandbox, read-only `get_order` only) confirms every donation receipt live with PayPal, with the Server SDK as fallback; PayPal's toolkit has no Payouts call, so payouts use the REST API behind the firewall. **Transaction Search** (Server SDK) for the balance check and reconciliation when the app has the scope.
 - **Model Context Protocol** — Firstlight runs a Streamable HTTP MCP server at `/mcp` (get_pool_status, list_active_events, get_allowance, create_donation, get_receipt) with strict input and output schemas, plus a `/.well-known/firstlight.json` manifest and `/llms.txt` so agents can find it.
 - **USGS Earthquake Hazards API** — the recorded M7.7 Panama event (us6000u18k) the demo replays, plus a read-only live-feed script. **EMSC SeismicPortal** — independent corroboration.
 - **APIMatic Context Plugin for PayPal** — gave our AI coding assistant the PayPal API context while we built the integration.
