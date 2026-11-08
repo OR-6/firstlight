@@ -1,26 +1,19 @@
-# Firstlight — Build Spec (for Claude Code)
+# Firstlight — Build Spec
 
 > Working title. Disaster-relief cash payouts triggered by an AI agent, where every payment must pass a deterministic "payment firewall" the agent cannot talk its way past.
 > Hackathon: PayPal AI Hackathon (Devpost). **Hard deadline: Thu 12 Nov 2026, 12:00 PT = 21:00 Amsterdam.** Aim to submit by Thu 12:00 Amsterdam.
 
 ---
 
-## 0. How to use this file with Claude Code
+## 0. How to build from this spec
 
-1. Create a new empty repo. Save this file as `SPEC.md` and add a `CLAUDE.md` containing: "Read SPEC.md first. Follow its milestone order. Never put PayPal or LLM credentials anywhere the agent can read them."
-2. Start Claude Code in plan mode and paste this kickoff prompt:
+1. Build in milestone order (section 13). Write the firewall as pure functions with table-driven tests **before** wiring anything to PayPal or the LLM, and commit after each milestone.
+2. If behind schedule, use the cut list — never cut the firewall, the red-team demo, or the live sandbox payout.
 
-```
-Read SPEC.md fully. Summarise the architecture back in 10 lines, list anything ambiguous,
-then execute Milestone 1 only. Write the firewall as pure functions with table-driven tests
-BEFORE wiring anything to PayPal or an LLM. Commit after each milestone.
-```
-
-3. Build in milestone order (section 13). If behind schedule, use the cut list — never cut the firewall, the red-team demo, or the live sandbox payout.
-
-Rules for Claude Code while building:
+Ground rules:
 - The firewall is **pure, deterministic code**. No LLM calls inside it.
 - The agent can **never** hold PayPal credentials and can **never** name a payee. It can only reference `recipientId`s that already exist in the registry.
+- PayPal and LLM credentials live only in server-side configuration; nothing the agent reads ever contains them.
 - Everything shown in the demo must be real (real USGS data, real PayPal sandbox calls). No fake success screens.
 - Label the app clearly as **SANDBOX — no real money moves**.
 
@@ -44,7 +37,7 @@ After a major earthquake, people need cash first and it arrives last. Parametric
 - [ ] **Demo video < 3:00**, public on YouTube, shows the project running. No copyrighted music, no third-party trademarks without permission.
 - [ ] Project must be **free to test until the end of judging (Dec 15, 2026)**. Keep the hosted demo up through then.
 - [ ] Materials in English.
-- [ ] Text description + list of tools used and how (see SUBMISSION.md).
+- [ ] Text description + list of tools used and how.
 - [ ] Built during the submission period (start fresh — do not reuse an old project).
 - [ ] Project installs/runs as shown in the video.
 
@@ -76,7 +69,7 @@ Key security idea (put this in the README): **capability restriction beats detec
 ## 4. Stack and repo layout
 
 - TypeScript, Node 20+, **Next.js (App Router)**, Tailwind, **AG Grid** (React) for tables, **Leaflet** + OSM tiles for the map, **zod** for schemas, **Vitest** for tests, **SQLite** (better-sqlite3) for state (seeded deterministically on boot — no external DB).
-- LLM: Anthropic Messages API with tool use (model name in env `LLM_MODEL`). Provider wrapped behind an `LlmClient` interface so replay mode can swap it.
+- LLM: a hosted model API with tool use (model name in env `LLM_MODEL`). The provider is wrapped behind an `LlmClient` interface so replay mode can swap it.
 - PayPal: plain `fetch` against the REST API (fewer moving parts than SDKs). Optionally use `@paypal/agent-toolkit` for read-side tools (see section 14).
 
 ```
@@ -87,7 +80,7 @@ Key security idea (put this in the README): **capability restriction beats detec
   /firewall       rules/*.ts  engine.ts  tiers.ts  types.ts   (PURE, no I/O)
   /paypal         client.ts  payouts.ts  orders.ts  webhooks.ts
   /ledger         ledger.ts  audit.ts (hash chain)
-  /llm            client.ts  anthropic.ts  replay.ts
+  /llm            client.ts  live.ts  replay.ts
   /app            (Next.js routes + UI)
 /fixtures         events/*.json  llm/*.json  news/*.json  redteam/*.json
 /tests            firewall.*.test.ts  redteam.test.ts  ledger.test.ts
@@ -287,7 +280,7 @@ Sponsor-prize notes: a project can win only **one** sponsor prize, so choose by 
 **M1 — Sun (today): foundations**
 - PayPal developer account, sandbox business account (balance $10,000) + 8 sandbox personal accounts, sandbox app (Merchant) → credentials in `.env`.
 - **Payouts smoke test: send one $1 payout via curl/script and confirm it lands.** If this fails, switch plan to Orders/Invoicing immediately.
-- **Install the APIMatic Context Plugin for PayPal in Claude Code before writing any PayPal code.** The APIMatic prize requires that you used it to build the PayPal integration. The resource info page and the claim form are linked from the APIMatic sponsor page on the hackathon's Devpost site. It's free and gives Claude Code PayPal API context.
+- **Install the APIMatic Context Plugin for PayPal before writing any PayPal code.** The APIMatic prize requires that you used it to build the PayPal integration. The resource info page and the claim form are linked from the APIMatic sponsor page on the hackathon's Devpost site. It's free and gives your editor PayPal API context.
 - Repo + LICENSE, firewall rules + full unit tests, ledger + audit chain, USGS ingestion.
 
 **M2 — Mon: the loop**
@@ -297,7 +290,7 @@ Sponsor-prize notes: a project can win only **one** sponsor prize, so choose by 
 - Dashboard (map, AG Grid plan table, rule-trace drawer, approvals, payouts live), webhooks on Render, red-team console + `npm run redteam`.
 
 **M4 — Wed: polish and proof**
-- Human Checkout donations on Tue evening; the agent-donor layer (section 5.6b: manifest, MCP/HTTP intake, receipts, Samaritan demo agent, about half a day) on Wed morning; then Render deploy + webhook registration, README/SECURITY docs, design pass, record fixtures, **record the video (see SUBMISSION.md)**, upload to YouTube (public).
+- Human Checkout donations on Tue evening; the agent-donor layer (section 5.6b: manifest, MCP/HTTP intake, receipts, Samaritan demo agent, about half a day) on Wed morning; then Render deploy + webhook registration, README/SECURITY docs, design pass, record fixtures, **record the video**, upload to YouTube (public).
 
 **M5 — Thu morning: submit** by 12:00 Amsterdam. Buffer is for surprises, not features.
 
@@ -313,10 +306,10 @@ Sponsor-prize notes: a project can win only **one** sponsor prize, so choose by 
 4. Whether PayPal's Agent Toolkit / MCP server exposes payout tools (the hosted MCP sandbox endpoint is `https://mcp.sandbox.paypal.com`). If it covers orders/transactions, use it for read-side lookups so "PayPal + AI" is visible; keep payouts on the REST API behind the firewall.
 5. How the sandbox treats payouts to emails with no sandbox account (UNCLAIMED vs error).
 6. AG Grid and Render sponsor prize criteria (see their Devpost sponsor pages).
-7. You need an **Anthropic API key** for live mode and for recording fixtures (a Claude Code subscription is not an API key). Replay mode runs without one.
+7. You need an **LLM provider API key** for live mode and for recording fixtures. Replay mode runs without one.
 8. Hosting a Streamable-HTTP MCP endpoint from a Next.js route on Render: check the current MCP SDK's transport requirements before building 5.6b. Fallback: plain HTTP endpoints plus the manifest (still agent-readable).
 
-**Stretch goal (only after M4):** expose the firewall as an MCP server with one tool, `propose_payment`, and put it in front of PayPal's MCP server so *any* agent (including Claude Code) can be guarded — the "firewall for agent payments" story.
+**Stretch goal (only after M4):** expose the firewall as an MCP server with one tool, `propose_payment`, and put it in front of PayPal's MCP server so *any* agent can be guarded — the "firewall for agent payments" story.
 
 ---
 
@@ -327,7 +320,7 @@ PAYPAL_CLIENT_ID=
 PAYPAL_CLIENT_SECRET=
 PAYPAL_WEBHOOK_ID=
 APP_BASE_URL=
-ANTHROPIC_API_KEY=            # live mode / recording fixtures only
+LLM_API_KEY=                  # provider key; live mode / recording fixtures only
 LLM_MODEL=
 DEMO_MODE=replay|live
 PAYPAL_MODE=sandbox|simulated # simulated is local-dev only
