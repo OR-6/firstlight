@@ -3,7 +3,7 @@
 import dynamic from 'next/dynamic';
 import { useCallback, useState } from 'react';
 import type { EventView, PlanView, StateView } from '@/server/views';
-import { Notice } from '@/ui/format';
+import { Notice, TONE_HEX } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 import { MoneyPath, buildStops } from '@/ui/MoneyPath';
 import { AgentPanel, ApprovalForm, EventPanel, PlanHeader, SendPayouts } from '@/ui/panels';
@@ -12,7 +12,7 @@ import { RuleDrawer } from '@/ui/RuleDrawer';
 
 const QuakeMap = dynamic(() => import('@/ui/QuakeMap'), {
   ssr: false,
-  loading: () => <div className="h-full min-h-[360px] bg-[#0f1a22]" />,
+  loading: () => <div className="h-full min-h-[360px] bg-raised" />,
 });
 
 export default function MissionControl() {
@@ -58,7 +58,7 @@ export default function MissionControl() {
           {running ? 'Assessing…' : plan ? 'Run a new assessment' : 'Run assessment'}
         </button>
         <label className="flex items-center gap-2 text-[0.9rem] text-ink-muted">
-          <input type="checkbox" checked={poison} onChange={(e) => setPoison(e.target.checked)} className="h-4 w-4 accent-[var(--color-hold)]" />
+          <input type="checkbox" checked={poison} onChange={(e) => setPoison(e.target.checked)} className="h-4 w-4 accent-[var(--color-allow)]" />
           Add four poisoned news items
         </label>
         <span className="text-[0.85rem] text-ink-dim">
@@ -113,14 +113,14 @@ export default function MissionControl() {
 }
 
 function MapLegend() {
-  const dot = (c: string) => <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: c }} />;
+  const dot = (c: string) => <span className="inline-block h-3 w-3 rounded-full border-[1.5px] border-black" style={{ background: c }} />;
   return (
-    <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line-soft px-4 py-2.5 text-[0.82rem] text-ink-muted">
-      <span className="flex items-center gap-1.5">{dot('#2eb5a4')} Allowed, approved or paid</span>
-      <span className="flex items-center gap-1.5">{dot('#e3a13b')} Needs approval or sending</span>
-      <span className="flex items-center gap-1.5">{dot('#e5534b')} Blocked</span>
-      <span className="flex items-center gap-1.5">{dot('#6b8091')} Not in plan</span>
-      <span className="text-ink-dim">Rings are the firewall&apos;s payout bands: A up to 50 km, B 150 km, C 300 km.</span>
+    <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line-soft px-4 py-2.5 text-[0.875rem] text-ink-muted">
+      <span className="flex items-center gap-1.5">{dot(TONE_HEX.allow)} Allowed, approved or paid</span>
+      <span className="flex items-center gap-1.5">{dot(TONE_HEX.hold)} Needs approval or sending</span>
+      <span className="flex items-center gap-1.5">{dot(TONE_HEX.block)} Blocked</span>
+      <span className="flex items-center gap-1.5">{dot(TONE_HEX.muted)} Not in plan</span>
+      <span>Rings are the firewall&apos;s payout bands: A up to 50 km, B 150 km, C 300 km.</span>
     </div>
   );
 }

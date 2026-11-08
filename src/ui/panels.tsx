@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { EventView, PlanView } from '@/server/views';
 import { ApiError, call, useLive } from './live';
 import { Notice, PAGER, StatusChip, planStatus, usd, when } from './format';
@@ -11,7 +11,7 @@ export function EventPanel({ event }: { event: EventView }) {
   return (
     <section className="panel p-5" aria-labelledby="event-title">
       <div className="flex items-baseline gap-4">
-        <p className="num text-[2.6rem] font-[800] leading-none tracking-[-0.02em]">
+        <p className="num text-[2.75rem] font-[800] leading-none tracking-[-0.02em]">
           {event.mag.toFixed(1)}
           <span className="ml-1 text-[1rem] font-semibold text-ink-muted">{event.magType}</span>
         </p>
@@ -24,33 +24,30 @@ export function EventPanel({ event }: { event: EventView }) {
           </p>
         </div>
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-[0.9rem]">
-        <div>
-          <dt className="text-ink-dim">PAGER alert</dt>
-          <dd className="flex items-center gap-2 font-semibold capitalize">
-            <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: event.alert ? PAGER[event.alert] : 'var(--color-line)' }} />
-            {event.alert ?? 'None issued'}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-ink-dim">Review</dt>
-          <dd className="font-semibold">{event.status === 'reviewed' ? 'Reviewed by USGS' : 'Automatic (not yet reviewed)'}</dd>
-        </div>
-        <div className="col-span-2">
-          <dt className="text-ink-dim">Second source</dt>
-          <dd className="num">
-            {corr.mode === 'emsc' && o ? (
-              <>
-                <span className="font-semibold">EMSC agrees.</span> M{o.mag}, {distance(event, o.epicentre).toFixed(1)} km from the USGS epicentre,{' '}
-                {Math.abs((o.time - event.time) / 1000).toFixed(1)} s apart.
-              </>
-            ) : corr.mode === 'fallback' ? (
-              <span className="text-hold">EMSC unavailable. Using USGS review status, which is not independent.</span>
-            ) : (
-              <span className="text-block">No second source.</span>
-            )}
-          </dd>
-        </div>
+      <dl className="mt-4 grid grid-cols-[6.75rem_1fr] gap-x-3 sm:grid-cols-[8.5rem_1fr] sm:gap-x-4 gap-y-2 border-t border-line-soft pt-3 text-[0.94rem]">
+        <dt className="text-ink-muted">PAGER alert</dt>
+        <dd className="flex items-center gap-2 font-semibold capitalize">
+          <span
+            className="inline-block h-3 w-3 rounded-full border-[1.5px] border-black"
+            style={{ background: event.alert ? PAGER[event.alert] : 'transparent' }}
+          />
+          {event.alert ?? 'None issued'}
+        </dd>
+        <dt className="text-ink-muted">Review</dt>
+        <dd className="font-semibold">{event.status === 'reviewed' ? 'Reviewed by USGS' : 'Automatic (not yet reviewed)'}</dd>
+        <dt className="text-ink-muted">Second source</dt>
+        <dd className="num">
+          {corr.mode === 'emsc' && o ? (
+            <>
+              <span className="font-semibold">EMSC agrees.</span> M{o.mag}, {distance(event, o.epicentre).toFixed(1)} km from the USGS epicentre,{' '}
+              {Math.abs((o.time - event.time) / 1000).toFixed(1)} s apart.
+            </>
+          ) : corr.mode === 'fallback' ? (
+            <span className="text-hold">EMSC unavailable. Using USGS review status, which is not independent.</span>
+          ) : (
+            <span className="text-block">No second source.</span>
+          )}
+        </dd>
       </dl>
       {event.url ? (
         <a href={event.url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-[0.88rem] text-allow underline-offset-2 hover:underline">
@@ -122,6 +119,8 @@ export function AgentPanel({ plan }: { plan: PlanView }) {
 /** Approve or deny a plan. Same names on the buttons and in the result. */
 export function ApprovalForm({ plan, compact = false }: { plan: PlanView; compact?: boolean }) {
   const { bump } = useLive();
+  const nameId = useId();
+  const reasonId = useId();
   const [approver, setApprover] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
@@ -169,14 +168,18 @@ export function ApprovalForm({ plan, compact = false }: { plan: PlanView; compac
         ))}
       </ul>
       <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,14rem)_1fr]">
-        <label className="grid gap-1 text-[0.85rem] text-ink-muted">
-          Your name
-          <input className="field" value={approver} onChange={(e) => setApprover(e.target.value)} maxLength={100} autoComplete="name" />
-        </label>
-        <label className="grid gap-1 text-[0.85rem] text-ink-muted">
-          Reason (saved in the audit log)
-          <input className="field" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} placeholder="What you checked" />
-        </label>
+        <div className="grid gap-1">
+          <label htmlFor={nameId} className="text-[0.875rem] text-ink-muted">
+            Your name
+          </label>
+          <input id={nameId} className="field" value={approver} onChange={(e) => setApprover(e.target.value)} maxLength={100} autoComplete="name" />
+        </div>
+        <div className="grid gap-1">
+          <label htmlFor={reasonId} className="text-[0.875rem] text-ink-muted">
+            Reason (saved in the audit log)
+          </label>
+          <input id={reasonId} className="field" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={1000} placeholder="What you checked" />
+        </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button className="btn btn-go" disabled={busy !== null} onClick={() => decide('approve')}>

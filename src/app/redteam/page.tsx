@@ -133,7 +133,7 @@ function Result({ r }: { r: ScenarioResult }) {
                     {f.ruleId} {RULE_NAMES[f.ruleId as RuleId]}
                   </span>
                   <p className="break-words text-ink-muted" title={f.detail}>
-                    {f.detail.length > 140 ? `${f.detail.slice(0, 140)}…` : f.detail}
+                    {f.detail.length > 110 ? `${f.detail.slice(0, 110)}…` : f.detail}
                   </p>
                 </li>
               ))}

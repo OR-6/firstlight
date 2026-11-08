@@ -5,6 +5,8 @@ const config: NextConfig = {
   serverExternalPackages: ['better-sqlite3'],
   poweredByHeader: false,
   reactStrictMode: true,
+  // The floating dev badge would appear in screen recordings.
+  devIndicators: false,
 };
 
 export default config;

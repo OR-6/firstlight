@@ -11,17 +11,17 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 /** AG Grid themed to the console tokens. */
 export const gridTheme = themeQuartz.withParams({
-  browserColorScheme: 'dark',
-  backgroundColor: '#1c2b37',
-  foregroundColor: '#e4ecf1',
-  chromeBackgroundColor: '#1c2b37',
-  headerTextColor: '#93a7b6',
-  headerFontWeight: 600,
-  borderColor: '#263a4a',
-  oddRowBackgroundColor: '#1c2b37',
-  rowHoverColor: '#243644',
-  selectedRowBackgroundColor: '#243644',
-  accentColor: '#2eb5a4',
+  browserColorScheme: 'light',
+  backgroundColor: '#ffffff',
+  foregroundColor: '#000000',
+  chromeBackgroundColor: '#f1f4f2',
+  headerTextColor: '#3f4744',
+  headerFontWeight: 700,
+  borderColor: '#d8dedb',
+  oddRowBackgroundColor: '#ffffff',
+  rowHoverColor: '#f1f4f2',
+  selectedRowBackgroundColor: '#dcefe7',
+  accentColor: '#0b4a8f',
   fontFamily: 'inherit',
   fontSize: 14,
   spacing: 7,
@@ -71,7 +71,7 @@ export function PlanGrid({ plan, onOpen }: { plan: PlanView; onOpen: (row: PlanR
           return (
             <span>
               {p.data.requestedTier} <span className="text-ink-dim">→</span>{' '}
-              <span className={changed ? 'font-bold text-hold' : 'font-semibold'}>{p.data.allowedTier ?? 'none'}</span>
+              <span className={changed ? 'font-bold text-block' : 'font-semibold'}>{p.data.allowedTier ?? 'none'}</span>
               {p.data.flags.length ? <span className="ml-2 text-[0.8rem] text-ink-dim">{p.data.flags.join(', ').replaceAll('_', ' ')}</span> : null}
             </span>
           );
@@ -102,7 +102,7 @@ export function PlanGrid({ plan, onOpen }: { plan: PlanView; onOpen: (row: PlanR
         tooltipField: 'note',
         cellRenderer: (p: { data: PlanRow }) => (
           <span>
-            <span className="mr-2 rounded-[var(--radius-chip)] bg-raised px-1 text-[0.75rem] text-ink-muted">{p.data.locale}</span>
+            <span className="mr-2 rounded-[var(--radius-chip)] border border-line-soft px-1 text-[0.75rem] text-ink-muted">{p.data.locale}</span>
             {p.data.note}
           </span>
         ),

@@ -2,7 +2,7 @@
 
 > **SANDBOX ONLY: no real money moves.** All recipients are synthetic.
 
-Disaster-relief cash payouts proposed by an AI agent and gated by a deterministic payment firewall the agent can't talk its way past. Built for the PayPal AI Hackathon. The full spec is in [SPEC.md](SPEC.md). Policy choices not covered by the spec are in [docs/decisions.md](docs/decisions.md).
+Disaster-relief cash payouts proposed by an AI agent and gated by a deterministic payment firewall the agent can't talk its way past. Built for the PayPal AI Hackathon. The full spec is in [SPEC.md](SPEC.md). Policy choices not covered by the spec are in [docs/decisions.md](docs/decisions.md); the visual system is in [DESIGN.md](DESIGN.md).
 
 **Status: Milestone 3 (the product) done.** A dashboard runs the whole loop: a Claude agent assesses a real USGS earthquake, a deterministic firewall checks its plan, a person approves, a real PayPal sandbox Payouts batch goes out, and statuses update live. Replay mode reproduces the recorded Claude runs with no API key. Donations and deployment come in M4.
 

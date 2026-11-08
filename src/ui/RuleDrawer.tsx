@@ -32,8 +32,8 @@ export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () 
   if (!row) return null;
   return (
     <div className="fixed inset-0 z-[2000] flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
-      <button className="absolute inset-0 bg-[#0a1218]/60" aria-label="Close" onClick={onClose} tabIndex={-1} />
-      <aside className="relative flex h-full w-full max-w-[560px] flex-col border-l border-line bg-panel shadow-[-24px_0_48px_rgb(0_0_0/0.35)] motion-safe:animate-[slidein_160ms_ease-out]">
+      <button className="absolute inset-0 bg-black/35" aria-label="Close" onClick={onClose} tabIndex={-1} />
+      <aside className="relative flex h-full w-full max-w-[560px] flex-col border-l border-line bg-panel shadow-[-16px_0_40px_rgb(0_0_0/0.18)] motion-safe:animate-[slidein_160ms_ease-out]">
         <header className="flex items-start gap-4 border-b border-line-soft px-6 py-5">
           <div className="min-w-0 flex-1">
             <h2 id="drawer-title" className="text-[1.3rem] font-[800] leading-tight">

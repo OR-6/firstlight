@@ -13,13 +13,13 @@ export function when(ms: number): string {
 }
 
 const VERDICT: Record<string, { label: string; cls: string }> = {
-  ALLOW: { label: 'Allowed', cls: 'text-allow bg-allow-wash border-allow/40' },
-  REQUIRE_APPROVAL: { label: 'Needs approval', cls: 'text-hold bg-hold-wash border-hold/40' },
-  BLOCK: { label: 'Blocked', cls: 'text-block bg-block-wash border-block/40' },
+  ALLOW: { label: 'Allowed', cls: 'text-white bg-allow border-allow' },
+  REQUIRE_APPROVAL: { label: 'Needs approval', cls: 'text-black bg-hold-fill border-[#c99700]' },
+  BLOCK: { label: 'Blocked', cls: 'text-white bg-block border-block' },
 };
 
 export function VerdictChip({ v, size = 'md' }: { v: VerdictKind | string | null; size?: 'md' | 'lg' }) {
-  const meta = (v && VERDICT[v]) || { label: v ?? 'No verdict', cls: 'text-ink-muted bg-raised border-line' };
+  const meta = (v && VERDICT[v]) || { label: v ?? 'No verdict', cls: 'text-ink-muted bg-panel border-line' };
   return (
     <span
       className={`inline-flex items-center rounded-[var(--radius-chip)] border font-semibold leading-[1.35] ${meta.cls} ${
@@ -33,12 +33,12 @@ export function VerdictChip({ v, size = 'md' }: { v: VerdictKind | string | null
 
 export type Tone = 'allow' | 'hold' | 'block' | 'muted';
 const TONE: Record<Tone, string> = {
-  allow: 'text-allow bg-allow-wash border-allow/40',
-  hold: 'text-hold bg-hold-wash border-hold/40',
-  block: 'text-block bg-block-wash border-block/40',
-  muted: 'text-ink-muted bg-raised border-line',
+  allow: 'text-white bg-allow border-allow',
+  hold: 'text-black bg-hold-fill border-[#c99700]',
+  block: 'text-white bg-block border-block',
+  muted: 'text-ink-muted bg-panel border-line',
 };
-export const TONE_HEX: Record<Tone, string> = { allow: '#2eb5a4', hold: '#e3a13b', block: '#e5534b', muted: '#6b8091' };
+export const TONE_HEX: Record<Tone, string> = { allow: '#0b6e4f', hold: '#ffc72c', block: '#c8102e', muted: '#8e9692' };
 
 export function StatusChip({ label, tone, size = 'md' }: { label: string; tone: Tone; size?: 'md' | 'lg' }) {
   return (
@@ -86,34 +86,37 @@ export function itemStatus(p: PlanLike, recipientId: string, verdict: string): {
   return verdict === 'ALLOW' ? { label: 'Allowed', tone: 'allow' } : { label: 'Needs approval', tone: 'hold' };
 }
 
-/** Rule outcome mark: shape AND colour, so it reads without colour vision. */
+/** Rule outcome mark, drawn as the matching sign shape so it reads without colour vision. */
 export function StatusMark({ s }: { s: RuleStatus }) {
   if (s === 'pass')
     return (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-label="pass" role="img">
-        <path d="M2.5 7.5l3 3 6-7" fill="none" stroke="var(--color-allow)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-label="pass" role="img">
+        <circle cx="8" cy="8" r="7.5" fill="var(--color-allow)" />
+        <path d="M4.5 8.3l2.3 2.3 4.7-5" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   if (s === 'warn')
     return (
-      <svg width="14" height="14" viewBox="0 0 14 14" aria-label="warning" role="img">
-        <path d="M7 1.8l5.6 10H1.4z" fill="none" stroke="var(--color-hold)" strokeWidth="1.8" strokeLinejoin="round" />
-        <path d="M7 6v2.6" stroke="var(--color-hold)" strokeWidth="1.8" strokeLinecap="round" />
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-label="warning" role="img">
+        <path d="M8 .7L15.3 8 8 15.3.7 8z" fill="var(--color-hold-fill)" stroke="#000" strokeWidth="1" strokeLinejoin="round" />
+        <path d="M8 4.6v4.2" stroke="#000" strokeWidth="1.7" strokeLinecap="round" />
+        <circle cx="8" cy="11.1" r="0.95" fill="#000" />
       </svg>
     );
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-label="block" role="img">
-      <circle cx="7" cy="7" r="5.3" fill="none" stroke="var(--color-block)" strokeWidth="1.8" />
-      <path d="M3.4 10.6l7.2-7.2" stroke="var(--color-block)" strokeWidth="1.8" />
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-label="block" role="img">
+      <path d="M5.1.7h5.8l4.4 4.4v5.8l-4.4 4.4H5.1L.7 10.9V5.1z" fill="var(--color-block)" />
+      <path d="M4.3 8h7.4" stroke="#fff" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
 
-export const PAGER: Record<string, string> = { green: '#3fae5f', yellow: '#e8c547', orange: '#f08a4b', red: '#e5534b' };
+/** USGS PAGER alert colours. */
+export const PAGER: Record<string, string> = { green: '#00a651', yellow: '#ffe800', orange: '#ff8c00', red: '#e60000' };
 
 export function Notice({ tone = 'info', children }: { tone?: 'info' | 'error' | 'ok'; children: React.ReactNode }) {
   const cls =
-    tone === 'error' ? 'border-block/50 bg-block-wash text-[#ffc9c4]' : tone === 'ok' ? 'border-allow/40 bg-allow-wash text-[#bff0e8]' : 'border-line bg-raised text-ink-muted';
+    tone === 'error' ? 'border-block bg-block-wash text-[#7d0a1c]' : tone === 'ok' ? 'border-allow bg-allow-wash text-[#064a35]' : 'border-line bg-raised text-ink-muted';
   return (
     <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-[var(--radius-control)] border px-3 py-2 text-[0.9rem] ${cls}`}>
       {children}

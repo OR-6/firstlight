@@ -1,46 +1,46 @@
 @import 'tailwindcss';
 
-/*
- * Firstlight console tokens.
- * Night-shift blue-slate surfaces (an ops room after dark, not black), the three
- * verdict colours from the spec, and a warm ramp for payout bands on the map.
- */
+/* Firstlight tokens: road-sign colours on concrete grey. Roles and contrast are in DESIGN.md. */
 @theme {
   --font-sans: var(--font-overpass), ui-sans-serif, system-ui, sans-serif;
 
-  --color-ground: #16222c;
-  --color-panel: #1c2b37;
-  --color-raised: #243644;
-  --color-line: #30475a;
-  --color-line-soft: #263a4a;
-  --color-ink: #e4ecf1;
-  --color-ink-muted: #93a7b6;
-  --color-ink-dim: #6b8091;
+  /* See DESIGN.md: road-sign colours on concrete grey. */
+  --color-ground: #e5e9e7;
+  --color-panel: #ffffff;
+  --color-raised: #f1f4f2;
+  --color-line: #b9c1bd;
+  --color-line-soft: #d8dedb;
+  --color-ink: #000000;
+  --color-ink-muted: #3f4744;
+  --color-ink-dim: #5e6864;
 
-  --color-allow: #2eb5a4;
-  --color-allow-wash: rgb(46 181 164 / 0.14);
-  --color-hold: #e3a13b;
-  --color-hold-wash: rgb(227 161 59 / 0.14);
-  --color-block: #e5534b;
-  --color-block-wash: rgb(229 83 75 / 0.14);
+  --color-allow: #0b6e4f;
+  --color-allow-dark: #08583f;
+  --color-allow-wash: #dcefe7;
+  --color-hold: #7a5100;
+  --color-hold-fill: #ffc72c;
+  --color-hold-wash: #fff4d1;
+  --color-block: #c8102e;
+  --color-block-wash: #fbe3e6;
+  --color-route: #0b4a8f;
 
-  --color-band-a: #f08a4b;
-  --color-band-b: #e8c547;
-  --color-band-c: #7fc4d8;
+  --color-band-a: #e35205;
+  --color-band-b: #c99700;
+  --color-band-c: #0b4a8f;
 
-  --radius-chip: 2px;
-  --radius-control: 3px;
-  --radius-panel: 5px;
+  --radius-chip: 4px;
+  --radius-control: 4px;
+  --radius-panel: 6px;
 }
 
 @layer base {
   html {
-    color-scheme: dark;
+    color-scheme: light;
     background: var(--color-ground);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    font-size: 15px;
-    line-height: 1.5;
+    font-size: 16px;
+    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
   body {
@@ -48,12 +48,12 @@
     background: var(--color-ground);
   }
   :focus-visible {
-    outline: 2px solid var(--color-hold);
+    outline: 2px solid var(--color-route);
     outline-offset: 2px;
     border-radius: var(--radius-control);
   }
   ::selection {
-    background: rgb(46 181 164 / 0.35);
+    background: rgb(255 199 44 / 0.6);
   }
   @media (prefers-reduced-motion: reduce) {
     *,
@@ -85,12 +85,12 @@
     font-weight: 600;
     font-size: 0.93rem;
     border: 1px solid var(--color-line);
-    background: var(--color-raised);
+    background: var(--color-panel);
     color: var(--color-ink);
     transition: background-color 120ms, border-color 120ms;
   }
   .btn:hover:not(:disabled) {
-    border-color: var(--color-ink-dim);
+    border-color: var(--color-ink);
   }
   .btn:disabled {
     opacity: 0.45;
@@ -99,21 +99,22 @@
   .btn-go {
     background: var(--color-allow);
     border-color: var(--color-allow);
-    color: #0e2a27;
+    color: #ffffff;
   }
   .btn-go:hover:not(:disabled) {
-    border-color: #7de0d3;
+    background: var(--color-allow-dark);
+    border-color: var(--color-allow-dark);
   }
   .btn-stop {
-    background: transparent;
+    background: var(--color-panel);
     border-color: var(--color-block);
-    color: #ffb4ae;
+    color: var(--color-block);
   }
   .field {
     height: 2.25rem;
     padding: 0 0.7rem;
     border-radius: var(--radius-control);
-    background: var(--color-ground);
+    background: var(--color-panel);
     border: 1px solid var(--color-line);
     color: var(--color-ink);
   }
@@ -127,36 +128,27 @@
   }
 }
 
-/* Leaflet: dark OpenStreetMap tiles via filter, keeping roads and coastlines legible. */
+/* Leaflet: standard OSM tiles, slightly desaturated so status markers stand out. */
 .leaflet-container {
-  background: #0f1a22;
+  background: #dfe5e3;
   font-family: var(--font-sans);
 }
 .leaflet-tile-pane {
-  filter: grayscale(0.85) invert(1) brightness(0.78) contrast(0.92) hue-rotate(185deg);
-}
-.leaflet-control-attribution {
-  background: rgb(22 34 44 / 0.8) !important;
-  color: var(--color-ink-dim) !important;
+  filter: saturate(0.45) contrast(0.96);
 }
 .leaflet-control-attribution a {
   color: var(--color-ink-muted) !important;
 }
 .leaflet-tooltip.fl-tip {
-  background: var(--color-raised);
+  background: var(--color-panel);
   border: 1px solid var(--color-line);
   color: var(--color-ink);
   border-radius: var(--radius-control);
   box-shadow: none;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .leaflet-tooltip.fl-tip::before {
   display: none;
-}
-.leaflet-control-zoom a {
-  background: var(--color-raised) !important;
-  color: var(--color-ink) !important;
-  border-color: var(--color-line) !important;
 }
 
 @keyframes slidein {

@@ -14,9 +14,9 @@ import { TONE_HEX, itemStatus, usd } from './format';
  * safe under React's double-invoked and re-attached effects.
  */
 const BANDS = [
-  { km: 300, tier: 'C', color: '#7fc4d8' },
-  { km: 150, tier: 'B', color: '#e8c547' },
-  { km: 50, tier: 'A', color: '#f08a4b' },
+  { km: 300, tier: 'C', color: '#0b4a8f' },
+  { km: 150, tier: 'B', color: '#c99700' },
+  { km: 50, tier: 'A', color: '#e35205' },
 ];
 
 type Recipient = { recipientId: string; town: string; locale: string; flags: string[]; home: { lat: number; lon: number } };
@@ -37,6 +37,7 @@ export default function QuakeMap({
   const el = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
+  const fitted = useRef(false);
   const select = useRef(onSelect);
   select.current = onSelect;
 
@@ -54,6 +55,7 @@ export default function QuakeMap({
       m.remove();
       map.current = null;
       layer.current = null;
+      fitted.current = false;
     };
     // The view is set once; data changes only redraw layers below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -65,11 +67,11 @@ export default function QuakeMap({
     g.clearLayers();
     const centre: L.LatLngTuple = [event.epicentre.lat, event.epicentre.lon];
     for (const b of BANDS) {
-      L.circle(centre, { radius: b.km * 1000, color: b.color, weight: 1.5, opacity: 0.9, fillColor: b.color, fillOpacity: 0.05, dashArray: b.tier === 'C' ? '6 6' : undefined })
+      L.circle(centre, { radius: b.km * 1000, color: b.color, weight: 2, opacity: 0.95, fillColor: b.color, fillOpacity: 0.06, dashArray: b.tier === 'C' ? '7 6' : undefined })
         .bindTooltip(`Tier ${b.tier} band: up to ${b.km} km`, { className: 'fl-tip', sticky: true })
         .addTo(g);
     }
-    L.circleMarker(centre, { radius: 7, color: '#fff', weight: 2, fillColor: '#e5534b', fillOpacity: 1 })
+    L.circleMarker(centre, { radius: 8, color: '#000', weight: 2.5, fillColor: '#c8102e', fillOpacity: 1 })
       .bindTooltip(`Epicentre: M${event.mag} ${esc(event.place ?? '')}`, { className: 'fl-tip', direction: 'top', offset: [0, -8] })
       .addTo(g);
     const items = new Map(plan?.verdict?.items.map((i) => [i.recipientId, i]) ?? []);
@@ -77,10 +79,18 @@ export default function QuakeMap({
       const item = items.get(r.recipientId);
       const st = item && plan ? itemStatus(plan, r.recipientId, item.verdict) : null;
       const label = item && st ? `${st.label}${item.amountCents ? `: ${usd(item.amountCents)}, tier ${item.allowedTier}` : ''}` : plan ? 'Not in the plan' : 'Registered';
-      L.circleMarker([r.home.lat, r.home.lon], { radius: 6, color: '#16222c', weight: 2, fillColor: st ? TONE_HEX[st.tone] : TONE_HEX.muted, fillOpacity: 1 })
+      L.circleMarker([r.home.lat, r.home.lon], { radius: 7, color: '#000', weight: 1.5, fillColor: st ? TONE_HEX[st.tone] : TONE_HEX.muted, fillOpacity: 1 })
         .bindTooltip(`<strong>${esc(r.recipientId)}</strong> ${esc(r.town)}<br>${esc(label)}`, { className: 'fl-tip', direction: 'right', offset: [8, 0] })
         .on('click', () => select.current?.(r.recipientId))
         .addTo(g);
+    }
+    // Frame the epicentre and the recipients inside the payout radius (once per mount).
+    const m = map.current;
+    if (m && !fitted.current && recipients.length) {
+      const near = recipients.filter((r) => L.latLng(centre).distanceTo([r.home.lat, r.home.lon]) <= 300_000);
+      const pts: L.LatLngTuple[] = [centre, ...near.map((r) => [r.home.lat, r.home.lon] as L.LatLngTuple)];
+      m.fitBounds(L.latLngBounds(pts).pad(0.25), { maxZoom: 9 });
+      fitted.current = true;
     }
   }, [event, plan, recipients]);
 

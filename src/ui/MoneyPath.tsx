@@ -12,13 +12,6 @@ import { shortHash, usd } from './format';
 type State = 'done' | 'wait' | 'stop' | 'idle';
 type Stop = { name: string; state: State; headline: string; detail: string; hash?: string; seq?: number };
 
-const COLOR: Record<State, string> = {
-  done: 'var(--color-allow)',
-  wait: 'var(--color-hold)',
-  stop: 'var(--color-block)',
-  idle: 'var(--color-line)',
-};
-
 export function buildStops(event: EventView | null, plan: PlanView | null): Stop[] {
   const t = (type: string) => plan?.trail.find((e) => e.type === type);
   const v = plan?.verdict ?? null;
@@ -119,54 +112,78 @@ export function buildStops(event: EventView | null, plan: PlanView | null): Stop
   return [signal, sentinel, agent, firewall, approval, paypal, recipients];
 }
 
+/** Drawn as a green guide sign: white lettering, white inset border, sign-shaped marks. */
 export function MoneyPath({ stops }: { stops: Stop[] }) {
   return (
-    <section aria-label="Path of this payment" className="panel overflow-hidden">
-      <ol className="grid snap-x auto-cols-[minmax(9.5rem,1fr)] grid-flow-col overflow-x-auto">
-        {stops.map((s, i) => {
-          const next = stops[i + 1];
-          return (
-            <li key={s.name} className="relative snap-start px-4 pb-4 pt-5">
-              {/* track: this stop's colour up to the next stop */}
-              <div className="mb-3 flex items-center" aria-hidden>
-                <Node state={s.state} />
-                {next ? (
-                  <span
-                    className="ml-1 h-[3px] flex-1"
-                    style={{
-                      background: s.state === 'done' ? COLOR.done : 'transparent',
-                      borderTop: s.state === 'done' ? undefined : `2px dashed ${COLOR[s.state === 'idle' ? 'idle' : s.state]}`,
-                      opacity: s.state === 'idle' ? 0.6 : 1,
-                    }}
-                  />
+    <section aria-label="Path of this payment" className="rounded-[var(--radius-panel)] bg-allow p-[3px] text-white">
+      <div className="rounded-[4px] border-2 border-white/90">
+        <ol className="grid snap-x auto-cols-[minmax(9.5rem,1fr)] grid-flow-col overflow-x-auto">
+          {stops.map((s, i) => {
+            const next = stops[i + 1];
+            const reached = s.state !== 'idle';
+            return (
+              <li key={s.name} className="relative snap-start px-4 pb-4 pt-4">
+                <div className="mb-2.5 flex h-5 items-center" aria-hidden>
+                  <Mark state={s.state} />
+                  {next ? (
+                    <span
+                      className="ml-1.5 flex-1"
+                      style={
+                        s.state === 'done'
+                          ? { height: 3, background: '#fff' }
+                          : { borderTop: `2px dashed rgb(255 255 255 / ${reached ? 0.8 : 0.4})` }
+                      }
+                    />
+                  ) : null}
+                </div>
+                <p className="text-[0.85rem] text-white/80">{s.name}</p>
+                <p className={`mt-0.5 text-[1.05rem] font-bold leading-snug ${reached ? 'text-white' : 'text-white/55'}`}>{s.headline}</p>
+                {s.detail ? (
+                  <p className="num mt-0.5 truncate text-[0.875rem] text-white/85" title={s.detail}>
+                    {s.detail}
+                  </p>
                 ) : null}
-              </div>
-              <p className="text-[0.82rem] text-ink-dim">{s.name}</p>
-              <p className="mt-0.5 text-[1.02rem] font-bold leading-snug" style={{ color: s.state === 'idle' ? 'var(--color-ink-dim)' : undefined }}>
-                {s.headline}
-              </p>
-              {s.detail ? <p className="num mt-0.5 truncate text-[0.85rem] text-ink-muted" title={s.detail}>{s.detail}</p> : null}
-              {s.hash ? (
-                <Link href={`/audit#seq-${s.seq}`} className="hash mt-1.5 inline-block text-[0.78rem] hover:text-ink" title={`Audit entry ${s.seq}: ${s.hash}`}>
-                  #{shortHash(s.hash)}
-                </Link>
-              ) : null}
-            </li>
-          );
-        })}
-      </ol>
+                {s.hash ? (
+                  <Link
+                    href={`/audit#seq-${s.seq}`}
+                    className="num mt-1.5 inline-block text-[0.8rem] text-white/75 underline-offset-2 hover:text-white hover:underline focus-visible:outline-white"
+                    title={`Audit entry ${s.seq}: ${s.hash}`}
+                  >
+                    #{shortHash(s.hash)}
+                  </Link>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
     </section>
   );
 }
 
-function Node({ state }: { state: State }) {
-  const c = COLOR[state];
-  if (state === 'done') return <span className="block h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: c }} />;
-  if (state === 'stop')
+/** Sign marks: done = white disc with check, waiting = yellow warning diamond, blocked = red octagon. */
+function Mark({ state }: { state: State }) {
+  if (state === 'done')
     return (
-      <svg width="14" height="14" viewBox="0 0 14 14" className="shrink-0">
-        <path d="M3 3l8 8M11 3l-8 8" stroke={c} strokeWidth="2.6" strokeLinecap="round" />
+      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0">
+        <circle cx="10" cy="10" r="9" fill="#fff" />
+        <path d="M6 10.4l2.8 2.8 5.4-6" fill="none" stroke="var(--color-allow)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
-  return <span className="block h-3.5 w-3.5 shrink-0 rounded-full border-2" style={{ borderColor: c }} />;
+  if (state === 'wait')
+    return (
+      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0">
+        <path d="M10 .8L19.2 10 10 19.2.8 10z" fill="var(--color-hold-fill)" stroke="#000" strokeWidth="1.2" strokeLinejoin="round" />
+        <path d="M10 5.6v5.2" stroke="#000" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="10" cy="13.9" r="1.15" fill="#000" />
+      </svg>
+    );
+  if (state === 'stop')
+    return (
+      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0">
+        <path d="M6.3.8h7.4l5.5 5.5v7.4l-5.5 5.5H6.3L.8 13.7V6.3z" fill="var(--color-block)" stroke="#fff" strokeWidth="1.2" />
+        <path d="M5.4 10h9.2" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+      </svg>
+    );
+  return <span className="block h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/45" />;
 }
