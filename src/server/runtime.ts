@@ -78,7 +78,7 @@ function build(): Runtime {
     db,
     audit: pipeline.audit,
     ledger: pipeline.ledger,
-    orders: () => (orders ??= new PayPalOrders()),
+    orders: () => (orders ??= configured('PAYPAL_NOT_CONFIGURED', () => new PayPalOrders())),
     baseUrl: () => baseUrl(),
   });
   return {
