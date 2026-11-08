@@ -19,6 +19,11 @@ const STATUS: Record<string, { label: string; tone: Tone }> = {
   CREATING: { label: 'Creating', tone: 'hold' },
   CANCELED: { label: 'Cancelled', tone: 'muted' },
   FAILED: { label: 'Failed', tone: 'block' },
+  PENDING: { label: 'Pending at PayPal', tone: 'hold' },
+  REFUNDED: { label: 'Refunded', tone: 'muted' },
+  PARTIALLY_REFUNDED: { label: 'Partly refunded', tone: 'hold' },
+  REVERSED: { label: 'Reversed', tone: 'block' },
+  DENIED: { label: 'Denied by PayPal', tone: 'block' },
 };
 
 /**

@@ -22,6 +22,7 @@ export function openDb(path = ':memory:'): Db {
 function migrate(db: Db): void {
   dropVerdictDigestUnique(db);
   addPayoutItemDetailColumns(db);
+  widenLedgerKinds(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id            TEXT PRIMARY KEY,
@@ -41,7 +42,7 @@ function migrate(db: Db): void {
     -- Pool money. Signed cents: credits positive, debits negative.
     CREATE TABLE IF NOT EXISTS ledger_entries (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      kind          TEXT NOT NULL CHECK (kind IN ('donation_credit','payout_debit','payout_reversal','seed_credit')),
+      kind          TEXT NOT NULL CHECK (kind IN (${LEDGER_KINDS_SQL})),
       amount_cents  INTEGER NOT NULL,
       ref           TEXT NOT NULL,
       created_ms    INTEGER NOT NULL,
@@ -139,6 +140,18 @@ function migrate(db: Db): void {
       UNIQUE (donor_ref, idempotency_key)
     );
 
+    -- Allowances: a person lets one agent donate up to a cap until an expiry (a mandate).
+    -- Only the sha256 of the bearer token is stored; the token is shown once, at creation.
+    CREATE TABLE IF NOT EXISTS allowances (
+      id            TEXT PRIMARY KEY,
+      token_hash    TEXT NOT NULL UNIQUE,
+      label         TEXT NOT NULL,
+      cap_cents     INTEGER NOT NULL CHECK (cap_cents > 0),
+      created_ms    INTEGER NOT NULL,
+      expires_ms    INTEGER NOT NULL,
+      revoked_ms    INTEGER
+    );
+
     -- Verified PayPal webhook deliveries, de-duplicated on PayPal's event id.
     CREATE TABLE IF NOT EXISTS webhook_events (
       id            TEXT PRIMARY KEY,
@@ -152,6 +165,33 @@ function migrate(db: Db): void {
     CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
       BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
   `);
+  addColumn(db, 'donations', 'allowance_id', 'TEXT');
+  addColumn(db, 'donations', 'refunded_cents', 'INTEGER NOT NULL DEFAULT 0');
+  db.exec('CREATE INDEX IF NOT EXISTS donations_allowance ON donations(allowance_id)');
+}
+
+/** Ledger entry kinds. Refunds and reversals of donations are debits (negative cents). */
+export const LEDGER_KINDS = ['donation_credit', 'donation_refund', 'donation_reversal', 'payout_debit', 'payout_reversal', 'seed_credit'] as const;
+const LEDGER_KINDS_SQL = LEDGER_KINDS.map((k) => `'${k}'`).join(',');
+
+function addColumn(db: Db, table: string, column: string, decl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+}
+
+/** Older databases had a CHECK on ledger_entries.kind without the donation refund/reversal kinds. Rebuild it. */
+function widenLedgerKinds(db: Db): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ledger_entries'").get() as { sql: string } | undefined;
+  if (!row || row.sql.includes("'donation_refund'")) return;
+  db.transaction(() => {
+    db.exec(`ALTER TABLE ledger_entries RENAME TO ledger_entries_old;
+      CREATE TABLE ledger_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN (${LEDGER_KINDS_SQL})),
+        amount_cents INTEGER NOT NULL, ref TEXT NOT NULL, created_ms INTEGER NOT NULL, UNIQUE (kind, ref));
+      INSERT INTO ledger_entries (id, kind, amount_cents, ref, created_ms) SELECT id, kind, amount_cents, ref, created_ms FROM ledger_entries_old;
+      DROP TABLE ledger_entries_old;`);
+  })();
 }
 
 /** Older databases declared verdicts.digest UNIQUE, which made a second assessment of an unchanged event fail. */

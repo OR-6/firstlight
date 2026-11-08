@@ -26,7 +26,7 @@ const ROLES: { who: string; uses: string; can: string }[] = [
   {
     who: 'AI agents donating for someone',
     uses: 'The manifest, llms.txt and the MCP server',
-    can: "Find Firstlight, check the pool and active earthquakes, create a donation. A person still approves every payment on PayPal. Nothing an agent sends reaches the payout agent.",
+    can: 'Find Firstlight, check the pool and active earthquakes, and donate within an allowance a person set on the Agents page. A person still approves every payment on PayPal. Nothing an agent sends reaches the payout agent.',
   },
 ];
 
@@ -133,6 +133,23 @@ export default function HowItWorks() {
           <p className="text-ink-muted">In this demo the eight enrolled households near the M7.7 Panama earthquake are synthetic, and their PayPal accounts are sandbox test accounts.</p>
         </section>
 
+        <section aria-labelledby="lastmile" className="space-y-3">
+          <h2 id="lastmile" className="text-[1.15rem] font-bold">
+            Who can actually receive the money
+          </h2>
+          <p>
+            Many rural households hit hardest by an earthquake don&apos;t have a PayPal account. PayPal Payouts is the rail to whoever can receive: a PayPal or Venmo account, or a licensed partner or mobile-wallet provider that pays out cash nearby.
+            Money credited to an account isn&apos;t cash in hand yet, so withdrawal points, fees and checking afterwards that people got it stay the field partner&apos;s job.
+          </p>
+          <p>
+            Every payment arrives with the same fixed message in the household&apos;s language: the amount, that nothing needs to be done, a help line through the local partner, and that Firstlight never asks for a password, code or fee.
+            The agent can&apos;t change that message.
+          </p>
+          <p className="text-ink-muted">
+            The amounts ($120, $80, $40 by distance) are demo values. A real programme sets them as a share of the local minimum expenditure basket and by household size.
+          </p>
+        </section>
+
         <section aria-labelledby="give" className="space-y-3">
           <h2 id="give" className="text-[1.15rem] font-bold">
             How donors find Firstlight and give
@@ -150,8 +167,12 @@ export default function HowItWorks() {
             <a href="/llms.txt" className="font-semibold text-allow underline-offset-2 hover:underline">
               llms.txt
             </a>
-            , then donate over MCP at <code className="num">/mcp</code>. The agent can only create a PayPal order; the person it works for approves the payment on PayPal, so there is real permission from a real customer. Every receipt carries
-            audit-log hashes the donor can check at <code className="num">/api/audit/verify</code>.
+            , then donate over MCP at <code className="num">/mcp</code>. First the person it works for sets an allowance on the{' '}
+            <Link href="/agents" className="font-semibold text-allow underline-offset-2 hover:underline">
+              Agents page
+            </Link>
+            : who the agent is, how much it may give and until when. The server enforces it, and the person still approves every payment on PayPal, so there is real permission from a real customer. Every receipt carries audit-log hashes the
+            donor can recompute itself.
           </p>
         </section>
 

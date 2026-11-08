@@ -1,5 +1,7 @@
 import type { LedgerSnapshot, PaidEvent } from '../firewall/types';
-import type { Db } from './db';
+import type { Db, LEDGER_KINDS } from './db';
+
+export type LedgerKind = (typeof LEDGER_KINDS)[number];
 
 /**
  * Internal pool ledger: the policy engine's source of truth for money
@@ -90,6 +92,33 @@ export class Ledger {
   /** Book a captured donation. Idempotent on `ref` (the PayPal capture id): a replay credits nothing. */
   creditDonation(ref: string, amountCents: number): { credited: boolean } {
     return this.credit('donation_credit', ref, amountCents);
+  }
+
+  /** Cents credited for a donation capture (0 if it was never credited). */
+  donationCreditCents(captureId: string): number {
+    const row = this.db.prepare("SELECT amount_cents FROM ledger_entries WHERE kind = 'donation_credit' AND ref = ?").get(captureId) as { amount_cents: number } | undefined;
+    return row?.amount_cents ?? 0;
+  }
+
+  /**
+   * Take money back out of the pool because PayPal returned a donation to the
+   * donor (refund, reversal/chargeback, or a credited capture later denied).
+   * Idempotent on (kind, ref). This is the one debit allowed to take the pool
+   * below zero: the money has already left, so it is booked as it happened and
+   * the shortfall is reported to the caller, who must flag it in the audit log.
+   */
+  debitDonation(kind: 'donation_refund' | 'donation_reversal', ref: string, amountCents: number): { debited: boolean; balanceBeforeCents: number; shortfallCents: number } {
+    assertPositiveCents(amountCents);
+    const tx = this.db.transaction(() => {
+      const balanceBeforeCents = this.poolBalanceCents();
+      const info = this.db
+        .prepare('INSERT OR IGNORE INTO ledger_entries (kind, amount_cents, ref, created_ms) VALUES (?, ?, ?, ?)')
+        .run(kind, -amountCents, ref, this.clock());
+      const debited = info.changes === 1;
+      const shortfallCents = debited ? Math.max(0, amountCents - Math.max(0, balanceBeforeCents)) : 0;
+      return { debited, balanceBeforeCents, shortfallCents };
+    });
+    return tx.immediate();
   }
 
   /** Initial pool funding for the demo (sandbox only). Idempotent on `ref`. */

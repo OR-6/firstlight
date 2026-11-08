@@ -16,6 +16,7 @@ const NAV = [
   { href: '/audit', label: 'Audit' },
   { href: '/how-it-works', label: 'How it works' },
   { href: '/donate', label: 'Donate' },
+  { href: '/agents', label: 'Agents' },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {

@@ -106,7 +106,7 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 | `npm test` | All tests |
 | `npm run redteam -- --llm replay` | Attack suite; writes `redteam-report.json` |
 | `npm run fl -- assess` / `approve` / `execute` / `audit` | The loop from the command line |
-| `npm run samaritan` | Demo donor agent: finds Firstlight via its manifest, donates over MCP, waits for a person to approve on PayPal |
+| `npm run samaritan` | Scripted donor agent: finds Firstlight via its manifest, donates over MCP within a person's allowance, waits for them to approve on PayPal, recomputes the audit chain itself |
 | `npm run paypal:check` | Verify sandbox credentials (no money moves) |
 | `npm run smoke:payout -- --send` | $1.00 sandbox payout to `PAYPAL_SMOKE_RECEIVER` |
 | `npm run webhook:register -- https://…` | Register the webhook on the sandbox app |
@@ -130,13 +130,21 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 | `FIREWALL_KILL_SWITCH` | `1` blocks every payout (R7) |
 | `RESET_COOLDOWN_MS` | Minimum gap between demo resets (default 60 s) |
 | `PAYPAL_SMOKE_RECEIVER` | Sandbox personal account for `npm run smoke:payout` |
-| `FIRSTLIGHT_URL`, `SAMARITAN_ALLOWANCE_USD` | Where `npm run samaritan` points (e.g. the hosted demo) and its allowance |
+| `FIRSTLIGHT_URL`, `FIRSTLIGHT_ALLOWANCE_TOKEN` | Where `npm run samaritan` points (e.g. the hosted demo) and the allowance token a person created on /agents |
 
 ## For other agents
 
-- Manifest: `/.well-known/firstlight.json`, summary: `/llms.txt`
-- MCP (Streamable HTTP): `/mcp` with `get_pool_status`, `list_active_events`, `create_donation`, `get_receipt`
-- A donor agent can only create a PayPal order. **A person approves it on PayPal**; nothing is charged otherwise. Receipts carry audit-log hashes the donor can verify at `/api/audit/verify?upTo=<hash>`.
+**Agents donating for a person.** A person opens [/agents](https://firstlight.onrender.com/agents), names the agent, sets a cap ($1–$100) and an expiry (1 hour to 7 days), and gets a one-time `alw_…` token. The agent connects to the MCP server and calls `get_allowance`, then `create_donation {amount_usd, allowance_token}`:
+
+```bash
+claude mcp add --transport http firstlight https://firstlight.onrender.com/mcp
+```
+
+- The server enforces the allowance: unknown, revoked or expired tokens and amounts over what's left are refused, and the donor name is the allowance's label, not something the agent asserts. The person can revoke it at any time.
+- **A person still approves every payment on PayPal**; nothing is charged otherwise.
+- Receipts reference audit entries an agent can check itself: the hash formula is in the manifest (`receiptFormat.auditChain`), and `scripts/verify-chain.ts` recomputes it without importing any Firstlight code. A receipt proves the donation is in the audit log and shows pool totals; it does not prove where each dollar went, because the pool is shared.
+- Manifest: `/.well-known/firstlight.json`, summary: `/llms.txt`. MCP tools: `get_pool_status`, `list_active_events`, `get_allowance`, `create_donation`, `get_receipt`.
+- `npm run samaritan` is a scripted (not LLM) example donor: `FIRSTLIGHT_ALLOWANCE_TOKEN=alw_… FIRSTLIGHT_URL=https://firstlight.onrender.com npm run samaritan`.
 
 ## For judges
 

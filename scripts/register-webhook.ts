@@ -4,9 +4,11 @@
  *   npm run webhook:register -- https://firstlight.onrender.com
  *
  * Prints the webhook id to set as PAYPAL_WEBHOOK_ID on the server. If a
- * webhook for that URL already exists, prints its id instead.
+ * webhook for that URL already exists, prints its id instead, and lists any
+ * event types below that it is not subscribed to.
  */
 import { PayPalApiError, PayPalClient, loadPayPalConfig } from '../src/paypal/client';
+import { DONATION_EVENT_TYPES } from '../src/paypal/webhooks';
 
 const base = (process.argv[2] ?? process.env.APP_BASE_URL ?? '').replace(/\/$/, '');
 if (!/^https:\/\//.test(base)) {
@@ -27,15 +29,20 @@ const EVENTS = [
   'PAYMENT.PAYOUTS-ITEM.RETURNED',
   'PAYMENT.PAYOUTS-ITEM.REFUNDED',
   'PAYMENT.PAYOUTS-ITEM.CANCELED',
-  'PAYMENT.CAPTURE.COMPLETED',
+  // Donations (Orders v2 / Payments v2), handled in src/pipeline/webhooks.ts.
+  ...DONATION_EVENT_TYPES,
 ];
 
 const client = new PayPalClient(loadPayPalConfig());
 try {
-  const existing = await client.request<{ webhooks?: { id: string; url: string }[] }>('GET', '/v1/notifications/webhooks');
+  const existing = await client.request<{ webhooks?: { id: string; url: string; event_types?: { name: string }[] }[] }>('GET', '/v1/notifications/webhooks');
   const found = existing.body.webhooks?.find((w) => w.url === url);
   if (found) {
     console.log(`Already registered: ${url}\nPAYPAL_WEBHOOK_ID=${found.id}`);
+    // An existing webhook keeps its old event list; say what it is missing (add them in the PayPal developer dashboard).
+    const have = new Set((found.event_types ?? []).map((t) => t.name));
+    const missing = EVENTS.filter((e) => !have.has(e) && !have.has('*'));
+    if (missing.length) console.log(`It is not subscribed to: ${missing.join(', ')}`);
   } else {
     const res = await client.request<{ id: string }>('POST', '/v1/notifications/webhooks', {
       body: { url, event_types: EVENTS.map((name) => ({ name })) },

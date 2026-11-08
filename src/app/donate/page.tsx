@@ -223,6 +223,11 @@ const STATUS_TEXT: Record<string, string> = {
   CREATING: 'is being set up with PayPal.',
   CANCELED: 'was cancelled. Nothing was charged.',
   FAILED: "didn't go through. Nothing was charged.",
+  PENDING: 'was approved and PayPal is still processing it. It reaches the pool when PayPal completes it.',
+  DENIED: 'was declined by PayPal. Nothing reached the pool.',
+  REFUNDED: 'was refunded to you, so it is no longer in the pool.',
+  PARTIALLY_REFUNDED: 'was partly refunded to you; the rest is in the pool.',
+  REVERSED: 'was reversed by PayPal, so it is no longer in the pool.',
 };
 
 function ReceiptPanel({ receiptId, canceled, error }: { receiptId: string; canceled: boolean; error: string | null }) {

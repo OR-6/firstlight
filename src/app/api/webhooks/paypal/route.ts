@@ -22,15 +22,18 @@ export async function POST(req: Request) {
     // At most a burst of deliveries per minute go on to PayPal verification; junk floods stop here.
     if (!webhookBudget()) return Response.json({ error: 'RATE_LIMITED' }, { status: 429 });
     const rawBody = await readText(req, 256_000);
-    const out = await tracked(() => handlePayPalWebhook({
-      pipeline: rt.pipeline,
-      db: rt.db,
-      paypal: rt.paypal(),
-      webhookId: process.env.PAYPAL_WEBHOOK_ID,
-      headers: req.headers,
-      rawBody,
-      onCaptureCompleted: (orderId, captureId, cents) => rt.donations.onCaptureCompleted(orderId, captureId, cents),
-    }));
+    // Tracked: CHECKOUT.ORDER.APPROVED captures with PayPal, so a demo reset must wait for it.
+    const out = await tracked(() =>
+      handlePayPalWebhook({
+        pipeline: rt.pipeline,
+        db: rt.db,
+        paypal: rt.paypal(),
+        webhookId: process.env.PAYPAL_WEBHOOK_ID,
+        headers: req.headers,
+        rawBody,
+        donations: rt.donations,
+      }),
+    );
     return Response.json(out.body, { status: out.status });
   } catch (err) {
     console.error(err);
