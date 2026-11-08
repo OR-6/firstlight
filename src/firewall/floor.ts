@@ -1,6 +1,7 @@
 import { eligibleRecipients } from './rules/r12-coverage';
 import { sameDisasterEventIds } from './rules/shared';
 import type { FirewallContext } from './types';
+import { withEventBands } from './tiers';
 
 /**
  * The firewall's own plan: every household it considers owed (verified,
@@ -11,7 +12,8 @@ import type { FirewallContext } from './types';
  * households left out). Decision is `escalate`, so it always needs a person.
  * Pure: same context, same plan.
  */
-export function floorPlan(ctx: FirewallContext, reason: string) {
+export function floorPlan(rawCtx: FirewallContext, reason: string) {
+  const ctx = withEventBands(rawCtx);
   // If the pool can't cover everyone, fill it highest tier first (closest and uplifted households),
   // then by id for determinism; R12 then names whoever is left out, so a person sees the gap.
   const RANK = { A: 0, B: 1, C: 2 } as const;

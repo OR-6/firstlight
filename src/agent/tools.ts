@@ -1,5 +1,5 @@
 import { distanceKm } from '../firewall/geo';
-import { distanceBandTier } from '../firewall/tiers';
+import { bandsFor, distanceBandTier } from '../firewall/tiers';
 import type { FirewallConfig } from '../firewall/types';
 import type { RegistryProfile } from '../registry/registry';
 import type { CorroborationReport } from '../signals/corroboration';
@@ -15,7 +15,7 @@ export type AgentWorld = {
   corroboration: CorroborationReport;
   untrusted: readonly UntrustedText[];
   registry: readonly RegistryProfile[];
-  config: Pick<FirewallConfig, 'tierMaxDistanceKm' | 'tierAmountsCents' | 'vulnerabilityUpliftFlags'>;
+  config: Pick<FirewallConfig, 'tierMaxDistanceKm' | 'tierAmountsCents' | 'vulnerabilityUpliftFlags' | 'bandScaleByMagnitude'>;
 };
 
 export type ToolOutcome = { content: string; isError: boolean };
@@ -65,7 +65,7 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
     case 'list_registry_near':
       return ok({
         tierTableUsd: Object.fromEntries(Object.entries(world.config.tierAmountsCents).map(([k, v]) => [k, v / 100])),
-        bandsKm: world.config.tierMaxDistanceKm,
+        bandsKm: bandsFor(e.mag, world.config),
         note: 'A household marked upliftEligible may get one tier above its distance band. Which condition qualifies it is not shared with you. Firstlight recomputes and enforces every tier.',
         recipients: world.registry
           .map((r) => {
@@ -74,7 +74,7 @@ export function runReadOnlyTool(world: AgentWorld, name: string, input: unknown)
               recipientId: r.recipientId,
               town: r.town,
               distanceKm: d,
-              distanceBandTier: distanceBandTier(d, world.config as FirewallConfig) ?? 'outside radius',
+              distanceBandTier: distanceBandTier(d, { ...world.config, tierMaxDistanceKm: bandsFor(e.mag, world.config) } as FirewallConfig) ?? 'outside radius',
               // Data minimisation (D84): the agent learns that an uplift applies, not which health or care condition it is.
               upliftEligible: r.flags.some((f) => world.config.vulnerabilityUpliftFlags.includes(f)),
             };

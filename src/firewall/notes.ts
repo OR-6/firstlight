@@ -10,5 +10,8 @@ import type { FirewallConfig } from './types';
 export function payoutNoteFor(locale: string, amountCents: number, config: FirewallConfig): string {
   const base = locale.split('-')[0]!.toLowerCase();
   const template = config.payoutNotes[base] ?? config.payoutNotes.en ?? config.fallbackNote;
-  return template.replace('{amount}', formatUsd(amountCents));
+  return template
+    .replace('{amount}', formatUsd(amountCents))
+    .replace('{partner}', config.fieldPartner.name)
+    .replace('{helpline}', config.fieldPartner.helpLine);
 }

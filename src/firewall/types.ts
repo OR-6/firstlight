@@ -149,8 +149,14 @@ export type LedgerSnapshot = {
 
 export type FirewallConfig = {
   tierAmountsCents: Record<Tier, number>;
-  /** Outer edge (km, inclusive) of each tier's distance band. Beyond C → no payout. */
+  /** Outer edge (km, inclusive) of each tier's distance band for the strongest quakes. Beyond C → no payout. */
   tierMaxDistanceKm: Record<Tier, number>;
+  /**
+   * Bands shrink for smaller quakes (basis risk: an M6.0 doesn't hurt people 300 km away).
+   * The first entry whose minMagnitude the event reaches sets the factor. Agreed by the programme
+   * before the season, like every other value here.
+   */
+  bandScaleByMagnitude: { minMagnitude: number; factor: number }[];
   /** Recipients with any of these flags may receive one tier above their distance band. */
   vulnerabilityUpliftFlags: string[];
   minRegistrationLeadHours: number;
@@ -183,6 +189,8 @@ export type FirewallConfig = {
    * Fixed text a human signed off on: agent-written text never reaches a recipient.
    */
   payoutNotes: Record<string, string>;
+  /** Who enrolled the households and how to reach them; filled into every payout note. */
+  fieldPartner: { name: string; helpLine: string };
 };
 
 export type FirewallContext = {

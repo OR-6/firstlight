@@ -5,6 +5,12 @@ export function defaultFirewallConfig(): FirewallConfig {
   return {
     tierAmountsCents: { A: 120_00, B: 80_00, C: 40_00 },
     tierMaxDistanceKm: { A: 50, B: 150, C: 300 },
+    // M7.5+ uses the full bands; smaller quakes reach less far. Demo values (D102).
+    bandScaleByMagnitude: [
+      { minMagnitude: 7.5, factor: 1 },
+      { minMagnitude: 6.5, factor: 0.6 },
+      { minMagnitude: 0, factor: 0.35 },
+    ],
     vulnerabilityUpliftFlags: ['sole_caregiver', 'mobility_impaired', 'chronic_illness', 'elderly_living_alone'],
     minRegistrationLeadHours: 72,
     perRecipientEventCapCents: 150_00,
@@ -28,13 +34,16 @@ export function defaultFirewallConfig(): FirewallConfig {
     fallbackNote: 'Firstlight emergency relief payment (SANDBOX test). No action is needed.',
     // Max 200 characters each (PayPal Payouts note limit, enforced in src/paypal/payouts.ts).
     payoutNotes: {
-      en: 'Firstlight earthquake relief: {amount}. No action needed. Questions: your local relief partner. We never ask for a password, code or fee. (SANDBOX)',
-      es: 'Ayuda de Firstlight por el terremoto: {amount}. No tiene que hacer nada. Dudas: su organización local de ayuda. Nunca pedimos contraseñas, códigos ni pagos. (SANDBOX)',
-      ne: 'भूकम्प राहत Firstlight: {amount}। केही गर्नु पर्दैन। प्रश्न भए स्थानीय राहत साझेदारलाई सोध्नुहोस्। हामी कहिल्यै पासवर्ड, कोड वा शुल्क माग्दैनौं। (SANDBOX)',
-      id: 'Bantuan gempa Firstlight: {amount}. Tidak perlu melakukan apa pun. Pertanyaan: mitra bantuan setempat. Kami tidak pernah meminta kata sandi, kode, atau biaya. (SANDBOX)',
-      ja: 'Firstlight 地震支援金 {amount}。手続きは不要です。ご質問は地域の支援団体へ。パスワード・コード・手数料を求めることはありません。(SANDBOX)',
-      tr: 'Firstlight deprem yardımı: {amount}. Bir şey yapmanız gerekmez. Sorular: yerel yardım ortağınız. Asla şifre, kod veya ücret istemeyiz. (SANDBOX)',
+      en: 'Earthquake relief via {partner}: {amount}. No action needed. Questions or not received? Call {helpline}. We never ask for a password, code or fee. (SANDBOX)',
+      es: 'Ayuda por el terremoto de {partner}: {amount}. No tiene que hacer nada. ¿Dudas o no llegó? Llame al {helpline}. Nunca pedimos contraseñas, códigos ni pagos. (SANDBOX)',
+      ne: '{partner} मार्फत भूकम्प राहत: {amount}। केही गर्नु पर्दैन। प्रश्न वा नआएमा {helpline} मा फोन गर्नुहोस्। हामी पासवर्ड, कोड वा शुल्क माग्दैनौं। (SANDBOX)',
+      id: 'Bantuan gempa dari {partner}: {amount}. Tak perlu berbuat apa pun. Ada pertanyaan/belum masuk? Hubungi {helpline}. Kami tak meminta kata sandi, kode, atau biaya. (SANDBOX)',
+      ja: '{partner}より地震支援金 {amount}。手続き不要。質問・未着は {helpline} へ。パスワード・コード・手数料は求めません。(SANDBOX)',
+      tr: '{partner} aracılığıyla deprem yardımı: {amount}. Bir şey yapmanız gerekmez. Soru veya ulaşmadıysa: {helpline}. Şifre, kod veya ücret istemeyiz. (SANDBOX)',
     },
+    // The field partner who enrolled the households: named in every note so the message is
+    // recognisable and there is a way to report non-receipt or complain. Synthetic for the demo.
+    fieldPartner: { name: 'Ayuda Local Herrera (demo)', helpLine: '+507 6000-0000' },
   };
 }
 

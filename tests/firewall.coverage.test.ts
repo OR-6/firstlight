@@ -131,3 +131,19 @@ describe('floor plan under a short pool', () => {
     expect(r12(v).map((r) => r.reasonCode)).toContain('ELIGIBLE_OMITTED');
   });
 });
+
+describe('distance bands scale with magnitude (D102)', () => {
+  it('M7.7 uses the full 50/150/300 km bands', async () => {
+    const { bandsFor } = await import('../src/firewall/tiers');
+    expect(bandsFor(7.7, defaultFirewallConfig())).toEqual({ A: 50, B: 150, C: 300 });
+  });
+  it('M7.0 reaches 30/90/180 km and M6.0 18/53/105 km', async () => {
+    const { bandsFor } = await import('../src/firewall/tiers');
+    expect(bandsFor(7.0, defaultFirewallConfig())).toEqual({ A: 30, B: 90, C: 180 });
+    expect(bandsFor(6.0, defaultFirewallConfig())).toEqual({ A: 18, B: 53, C: 105 });
+  });
+  it('an M6.8 quake does not pay a household 250 km away', () => {
+    const v = evaluatePlan(plan([{ recipientId: 'rcp_c250', tier: 'C' }]), ctx({ event: { mag: 6.8 }, corroboration: [{ ...ctx().corroboration[0]!, mag: 6.8 }] }));
+    expect(v.items[0]?.ruleTrace.map((r) => r.reasonCode)).toContain('OUTSIDE_MAX_RADIUS');
+  });
+});

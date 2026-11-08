@@ -71,8 +71,9 @@ const rows: Row[] = [
   { name: 'R8 block: M5.9 and PAGER null (small events have no alert)', ctx: { event: { mag: 5.9, alert: null }, corroboration: [{ ...emsc, mag: 5.9 }] }, overall: 'BLOCK', code: 'TRIGGER_THRESHOLD_NOT_MET' },
   { name: 'R8 warn: exactly M6.0 with PAGER null (magnitude only: basis risk, a person checks)', ctx: { event: { mag: 6.0, alert: null }, corroboration: [{ ...emsc, mag: 6.2 }] }, overall: 'REQUIRE_APPROVAL', code: 'TRIGGER_MAGNITUDE_ONLY' },
   { name: 'R8 warn: M7.0 offshore with PAGER green', ctx: { event: { mag: 7.0, alert: 'green' }, corroboration: [{ ...emsc, mag: 7.0 }] }, overall: 'REQUIRE_APPROVAL', code: 'TRIGGER_MAGNITUDE_ONLY' },
-  { name: 'R8 pass: M6.0 with PAGER yellow', ctx: { event: { mag: 6.0, alert: 'yellow' }, corroboration: [{ ...emsc, mag: 6.1 }] }, overall: 'ALLOW', code: 'TRIGGER_CORROBORATED' },
-  { name: 'R8 pass: M5.5 but PAGER red', ctx: { event: { mag: 5.5, alert: 'red' }, corroboration: [{ ...emsc, mag: 5.6 }] }, overall: 'ALLOW', code: 'TRIGGER_CORROBORATED' },
+  // Smaller quakes shrink the bands (D102), so the 250 km household in CLEAN_ITEMS falls outside: the trigger passes, the plan needs a person.
+  { name: 'R8 pass: M6.0 with PAGER yellow (bands shrink, far household blocked)', ctx: { event: { mag: 6.0, alert: 'yellow' }, corroboration: [{ ...emsc, mag: 6.1 }] }, overall: 'REQUIRE_APPROVAL', code: 'TRIGGER_CORROBORATED' },
+  { name: 'R8 pass: M5.5 but PAGER red (bands shrink, far household blocked)', ctx: { event: { mag: 5.5, alert: 'red' }, corroboration: [{ ...emsc, mag: 5.6 }] }, overall: 'REQUIRE_APPROVAL', code: 'TRIGGER_CORROBORATED' },
   { name: 'R8 warn: no second source', ctx: { corroboration: [] }, overall: 'REQUIRE_APPROVAL', code: 'TRIGGER_UNCORROBORATED' },
   { name: 'R8 pass: magnitude delta exactly 0.5', ctx: { corroboration: [{ ...emsc, mag: 7.2 }] }, overall: 'ALLOW', code: 'TRIGGER_CORROBORATED' },
   { name: 'R8 warn: magnitude delta 0.6', ctx: { corroboration: [{ ...emsc, mag: 7.1 }] }, overall: 'REQUIRE_APPROVAL', code: 'TRIGGER_UNCORROBORATED' },

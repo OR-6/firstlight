@@ -12,6 +12,7 @@ import { r8Trigger } from './rules/r8-trigger';
 import { r9Note, r9PlanIntegrity } from './rules/r9-integrity';
 import { r10Approval } from './rules/r10-approval';
 import { r12Coverage } from './rules/r12-coverage';
+import { withEventBands } from './tiers';
 import { payoutNoteFor } from './notes';
 import { sameDisasterEventIds } from './rules/shared';
 import type { FirewallContext, ItemVerdict, RuleResult, RuleStatus, Verdict, VerdictKind } from './types';
@@ -27,7 +28,8 @@ import type { FirewallContext, ItemVerdict, RuleResult, RuleStatus, Verdict, Ver
  * acting on it. The executor must refuse any verdict whose `digest` is not in
  * the log.
  */
-export function evaluatePlan(rawPlan: unknown, ctx: FirewallContext): Verdict {
+export function evaluatePlan(rawPlan: unknown, rawCtx: FirewallContext): Verdict {
+  const ctx = withEventBands(rawCtx);
   const parsed = parsePlan(rawPlan);
   const planRules: RuleResult[] = [...r9PlanIntegrity(parsed, ctx), r8Trigger(ctx), r7Velocity(ctx)];
 
