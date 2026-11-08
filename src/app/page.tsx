@@ -2,19 +2,36 @@
 
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { EventView, PlanView, StateView } from '@/server/views';
+import { goToDecision } from '@/ui/decision';
 import { Notice, StatusMark, TONE_HEX } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 import { MoneyPath, buildStops } from '@/ui/MoneyPath';
-import { AgentPanel, ApprovalForm, EventPanel, PlanHeader, SendPayouts } from '@/ui/panels';
-import { PlanGrid, planRows, type PlanRow } from '@/ui/PlanGrid';
+import { AgentPanel, EventPanel } from '@/ui/panels';
+import { PlanSection, useRuleDrawer } from '@/ui/PlanDetail';
 import { RuleDrawer } from '@/ui/RuleDrawer';
 
 const QuakeMap = dynamic(() => import('@/ui/QuakeMap'), {
   ssr: false,
   loading: () => <div className="h-full min-h-[360px] bg-raised" />,
 });
+
+/** Bring the plan into view after a run: the decision panel if there is one, else the plan itself. */
+function showOutcome() {
+  if (goToDecision()) return;
+  const el = document.getElementById('plan');
+  if (!el) return;
+  const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+}
+
+function llmLine(mode: string | undefined): string | null {
+  if (mode === undefined) return null;
+  if (mode === 'replay') return 'Replays the recorded Claude Opus 5.5 run for this real earthquake.';
+  if (mode === 'scripted') return 'Uses a scripted test agent, not Claude.';
+  return 'Calls Claude live.';
+}
 
 export default function MissionControl() {
   const { bump } = useLive();
@@ -25,15 +42,24 @@ export default function MissionControl() {
   const [poison, setPoison] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [row, setRow] = useState<PlanRow | null>(null);
-  const close = useCallback(() => setRow(null), []);
+  const drawer = useRuleDrawer(plan);
+  // The plan a finished run produced; once it has loaded, scroll to its decision.
+  const scrollFor = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!plan || scrollFor.current !== plan.id) return;
+    scrollFor.current = null;
+    const raf = requestAnimationFrame(showOutcome);
+    return () => cancelAnimationFrame(raf);
+  }, [plan]);
 
   const assess = async () => {
     if (!eventId) return;
     setRunning(true);
     setError(null);
     try {
-      await call(`/api/events/${eventId}/assess`, { body: { redteam: poison } });
+      const p = await call<PlanView>(`/api/events/${eventId}/assess`, { body: { redteam: poison } });
+      scrollFor.current = p.id;
       bump();
     } catch (e) {
       setError((e as ApiError).message);
@@ -43,20 +69,20 @@ export default function MissionControl() {
   };
 
   const openRecipient = (id: string) => {
-    if (!plan) return;
-    const r = planRows(plan).find((x) => x.recipientId === id);
-    if (r) setRow(r);
+    const r = drawer.rows.find((x) => x.recipientId === id);
+    if (r) drawer.open(r);
   };
 
-  const v = plan?.verdict;
-  const needsDecision = v?.overall === 'REQUIRE_APPROVAL' && !plan?.approval;
-  const canSend = plan && v && !plan.batch && (v.overall === 'ALLOW' || plan.approval?.decision === 'approve');
+  const mode = llmLine(state?.llmMode);
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-[1.5rem] font-[800]">Mission control</h1>
-        <p className="mt-1 max-w-[78ch] text-ink-muted">
+        <p className="mt-0.5 max-w-[78ch] text-[0.94rem] text-ink-dim">
+          Earthquake relief cash in minutes, no application needed. For aid organisations that enrol households before a disaster. PayPal sandbox: no real money moves.
+        </p>
+        <p className="mt-2 max-w-[78ch] text-ink-muted">
           A real M7.7 earthquake hit Panama on 9 October 2026. Run the assessment to watch the agent draft relief payouts for the households enrolled near it, and the firewall decide what can be paid.{' '}
           <Link href="/how-it-works" className="font-semibold text-allow underline-offset-2 hover:underline">
             How it works
@@ -72,15 +98,13 @@ export default function MissionControl() {
           <input type="checkbox" checked={poison} onChange={(e) => setPoison(e.target.checked)} className="h-4 w-4 accent-[var(--color-allow)]" />
           Also feed it four fake news items that try to redirect the money (red-team test)
         </label>
-        <span className="text-[0.85rem] text-ink-dim">
-          {state?.llmMode === 'replay' ? 'Replays the recorded Claude Opus 5.5 run for this real earthquake.' : 'Calls Claude live.'}
-        </span>
+        {mode ? <span className="text-[0.85rem] text-ink-dim">{mode}</span> : null}
         <ResetDemo />
       </div>
       {error ? <Notice tone="error">{error}</Notice> : null}
       {eventError ? <Notice tone="error">{eventError.message}</Notice> : null}
 
-      <MoneyPath stops={buildStops(event, plan)} />
+      <MoneyPath stops={buildStops(event, plan)} onDecide={goToDecision} />
 
       <div className="grid gap-5 lg:grid-cols-12">
         <div className="space-y-5 lg:col-span-5">
@@ -96,35 +120,27 @@ export default function MissionControl() {
             </section>
           )}
         </div>
-        <div className="panel overflow-hidden lg:col-span-7">
+        {/* isolate: Leaflet's controls use z-index 1000, the same as the sticky header; keep them inside the map's own stacking context. */}
+        <div className="panel relative isolate z-0 overflow-hidden lg:col-span-7">
           {event && state ? <QuakeMap event={event} plan={plan} recipients={plan?.recipients ?? event.recipients} onSelect={openRecipient} /> : null}
           <MapLegend />
         </div>
       </div>
 
-      {plan && v ? (
-        <section className="panel overflow-hidden" aria-labelledby="plan-title">
-          <div className="space-y-4 border-b border-line-soft p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <PlanHeader plan={plan} event={event} headingId="plan-title" />
-              <p className="text-[0.85rem] text-ink-dim">Select a household to see every firewall check for it.</p>
-            </div>
-            {needsDecision ? <ApprovalForm plan={plan} compact /> : null}
-            {canSend ? <SendPayouts plan={plan} /> : null}
-          </div>
-          <PlanGrid plan={plan} onOpen={setRow} />
-        </section>
-      ) : null}
-      <RuleDrawer row={row} onClose={close} />
+      {plan ? <PlanSection plan={plan} event={event} onOpen={drawer.open} /> : null}
+      <RuleDrawer row={drawer.row} stale={drawer.stale} onClose={drawer.close} />
     </div>
   );
 }
 
 const TRY_IT_KEY = 'firstlight.tryit.hidden';
 
+const stepLink = 'font-semibold text-allow underline-offset-2 hover:underline';
+
 /**
  * A quiet four-step guide for a first visit. Each step ticks off as the demo
- * reaches it. Hiding it is remembered in this browser only.
+ * reaches it; a step waiting on the reader links to where they act. Hiding it
+ * is remembered in this browser only.
  */
 function TryIt({ plan }: { plan: PlanView | null }) {
   const [hidden, setHidden] = useState(false);
@@ -137,13 +153,30 @@ function TryIt({ plan }: { plan: PlanView | null }) {
   }, []);
   if (hidden) return null;
   const v = plan?.verdict;
+  const needsDecision = v?.overall === 'REQUIRE_APPROVAL' && !plan?.approval;
+  const canSend = Boolean(plan && v && !plan.batch && (v.overall === 'ALLOW' || plan.approval?.decision === 'approve'));
+  const jump = (label: string) => (
+    <a
+      href="#decision"
+      className={stepLink}
+      onClick={(e) => {
+        e.preventDefault();
+        goToDecision();
+      }}
+    >
+      {label}
+    </a>
+  );
   const steps: { label: React.ReactNode; done: boolean }[] = [
     { label: 'Run the assessment', done: Boolean(plan) },
-    { label: 'Approve the plan', done: Boolean(plan?.approval?.decision === 'approve' || v?.overall === 'ALLOW') },
-    { label: 'Send the payouts', done: Boolean(plan?.batch) },
+    {
+      label: needsDecision ? jump('Approve the plan') : 'Approve the plan',
+      done: Boolean(plan?.approval?.decision === 'approve' || v?.overall === 'ALLOW'),
+    },
+    { label: canSend ? jump('Send the payouts') : 'Send the payouts', done: Boolean(plan?.batch) },
     {
       label: (
-        <Link href="/redteam" className="font-semibold text-allow underline-offset-2 hover:underline">
+        <Link href="/redteam" className={stepLink}>
           See the red team try to break it
         </Link>
       ),

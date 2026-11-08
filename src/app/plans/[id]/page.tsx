@@ -20,7 +20,7 @@ export default function PlanPage({ params }: { params: Promise<{ id: string }> }
       </p>
       <h1 className="text-[1.4rem] font-[800]">Plan {id}</h1>
       {error ? <Notice tone="error">{error.message}</Notice> : null}
-      {plan ? <PlanDetail plan={plan} event={event} /> : null}
+      {plan ? <PlanDetail plan={plan} event={event} gone={error?.status === 404} /> : null}
     </div>
   );
 }

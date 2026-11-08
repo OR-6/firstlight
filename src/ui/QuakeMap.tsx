@@ -94,5 +94,5 @@ export default function QuakeMap({
     }
   }, [event, plan, recipients]);
 
-  return <div ref={el} className="h-full min-h-[360px] w-full" role="img" aria-label={`Map of the epicentre near ${event.place ?? ''}, payout bands and recipients`} />;
+  return <div ref={el} className="isolate z-0 h-full min-h-[360px] w-full" role="img" aria-label={`Map of the epicentre near ${event.place ?? ''}, payout bands and recipients`} />;
 }

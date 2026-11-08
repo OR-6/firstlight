@@ -77,6 +77,12 @@ function TopBar() {
   const [open, setOpen] = useState(false);
   const pending = data?.pendingApprovals ?? 0;
   useEffect(() => setOpen(false), [path]);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   return (
     <header className="sticky top-0 z-[1000] border-b border-line-soft bg-panel">
@@ -115,7 +121,15 @@ function TopBar() {
         </div>
       </div>
       {open ? (
-        <nav id="mobile-nav" aria-label="Main" className="flex flex-col border-t border-line-soft bg-panel px-2 py-2 lg:hidden">
+        // A scrim under the open menu (below the 56 px bar) so it reads as a layer over the page, not part of it. Tapping it closes the menu.
+        <button type="button" tabIndex={-1} aria-hidden className="fixed inset-x-0 bottom-0 top-14 cursor-default bg-black/35 lg:hidden" onClick={() => setOpen(false)} />
+      ) : null}
+      {open ? (
+        <nav
+          id="mobile-nav"
+          aria-label="Main"
+          className="absolute inset-x-0 top-full flex max-h-[calc(100dvh-3.5rem)] flex-col overflow-y-auto border-b-2 border-t border-b-black border-t-line-soft bg-panel px-2 py-2 lg:hidden"
+        >
           <NavLinks path={path} pending={pending} onNavigate={() => setOpen(false)} />
           {data ? (
             <p className="px-2.5 pt-2 text-[0.9rem] text-ink-muted">

@@ -1,8 +1,20 @@
 /** Sign marks shared by the live money's-path board and the static diagram on How it works. No client code. */
-export type State = 'done' | 'wait' | 'stop' | 'idle';
+export type State = 'done' | 'wait' | 'stop' | 'idle' | 'info';
 
-/** Sign marks: done = white disc with check, waiting = yellow warning diamond, blocked = red octagon. */
-export function Mark({ state }: { state: State }) {
+/**
+ * Sign marks: done = white disc with check, waiting = yellow warning diamond
+ * (reserved for "needs approval"), blocked = red octagon. `info` is a neutral
+ * reading, such as an earthquake that has been reported but not yet assessed:
+ * a white ring around a dot, filled with `color` (the PAGER colour) if given.
+ */
+export function Mark({ state, color }: { state: State; color?: string }) {
+  if (state === 'info')
+    return (
+      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0" aria-hidden>
+        <circle cx="10" cy="10" r="8.6" fill="none" stroke="#fff" strokeWidth="2" />
+        <circle cx="10" cy="10" r="4.6" fill={color ?? '#fff'} stroke="#000" strokeWidth="1.3" />
+      </svg>
+    );
   if (state === 'done')
     return (
       <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0" aria-hidden>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RuleResult } from '../src/firewall/types';
-import { draftLang, noteLang, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
+import { draftLang, extraFields, findingTitle, flagText, noteLang, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
 
 const rule = (id: RuleResult['id'], status: RuleResult['status'], reasonCode: RuleResult['reasonCode'], detail: string, scope: RuleResult['scope'] = 'plan'): RuleResult => ({
   id,
@@ -96,5 +96,31 @@ describe('plan headings and summary', () => {
   it('summarises the decision and who was left out', () => {
     const s = planSummary(plan, event);
     expect(s).toMatch(/^Trigger: M7\.7 confirmed by two agencies\. 1 of 2 households in the plan\. 1 left out: Yaviza \(\d+ km\)\.$/);
+  });
+});
+
+describe('machine strings in plain words', () => {
+  it('summarises extra plan fields instead of dumping JSON paths', () => {
+    expect(extraFields('ignored unknown field(s): $.items[0].amount, $.items[0].receiver, $.items[1].amount')).toBe('added payout fields: amount, receiver');
+    expect(extraFields('ignored unknown field(s): $.receiver')).toBe('added plan field: receiver');
+    expect(extraFields('ignored unknown field(s): $.items[0].email, $.override')).toBe('added payout field: email; added plan field: override');
+    expect(extraFields('nothing listed')).toBeNull();
+    const t = plainRule(rule('R9', 'warn', 'PLAN_UNKNOWN_FIELDS', 'ignored unknown field(s): $.items[0].amount, $.items[0].receiver'));
+    expect(t).toBe('The agent added payout fields: amount, receiver. They were ignored, and a person checks the plan.');
+    expect(t).not.toContain('$.');
+  });
+
+  it('gives each R9 and R12 finding its own title', () => {
+    const r9 = ['PLAN_CLEAN', 'PLAN_UNKNOWN_FIELDS', 'INJECTION_SUSPECTED', 'EXCEPTION_REQUESTED', 'AGENT_ESCALATED', 'NOTE_OK'].map(findingTitle);
+    expect(r9.every((x) => typeof x === 'string' && x.length > 0)).toBe(true);
+    expect(new Set(r9.slice(0, 5)).size).toBe(5);
+    expect(findingTitle('ELIGIBLE_OMITTED')).toBe('Eligible households left out');
+    // Single-finding rules keep the rule's own name.
+    expect(findingTitle('REGISTERED_ELIGIBLE')).toBeNull();
+  });
+
+  it('writes vulnerability flags as words', () => {
+    expect(flagText(['mobility_impaired', 'sole_caregiver'])).toBe('mobility impaired, sole caregiver');
+    expect(flagText([])).toBe('');
   });
 });
