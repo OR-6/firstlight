@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { PlanSummary, PlanView } from '@/server/views';
+import type { EventView, PlanSummary, PlanView } from '@/server/views';
 import { usd, when } from '@/ui/format';
 import { LoadError, Loading } from '@/ui/format';
 import { useApi } from '@/ui/live';
@@ -9,10 +9,11 @@ import { ApprovalForm } from '@/ui/panels';
 
 function Pending({ id }: { id: number }) {
   const { data } = useApi<PlanView>(`/api/plans/${id}`);
-  if (!data) return <div className="panel h-40" />;
+  const { data: event } = useApi<EventView>(data ? `/api/events/${data.eventId}` : null);
+  if (!data) return <div className="panel h-40" aria-busy="true" />;
   return (
     <div className="space-y-2">
-      <ApprovalForm plan={data} />
+      <ApprovalForm plan={data} event={event} />
       <Link href={`/plans/${id}`} className="ml-1 text-[0.88rem] text-allow hover:underline">
         Review every recipient in plan {id}
       </Link>
@@ -30,7 +31,7 @@ export default function ApprovalsPage() {
       <div>
         <h1 className="text-[1.4rem] font-[800]">Approvals</h1>
         <p className="mt-1 max-w-[70ch] text-ink-muted">
-          The firewall sends plans here when they are over the auto-approve limit or something looked wrong. Your name and reason are written to the audit log. Approving can never add a recipient or raise an amount; blocked items stay blocked.
+          The firewall sends plans here when they add up to more than can be sent without review, or when something looked wrong. Your name and reason are written to the audit log. Approving can never add a recipient or raise an amount; blocked items stay blocked.
         </p>
       </div>
       <LoadError error={error} onRetry={reload} />

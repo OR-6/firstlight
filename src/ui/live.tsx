@@ -7,12 +7,15 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
  * and every useApi() hook refetches. `last` carries the latest audit type so
  * screens can react to specific steps.
  */
-type Live = { version: number; connected: boolean; last: { type: string; hash: string } | null; bump: () => void };
-const LiveContext = createContext<Live>({ version: 0, connected: false, last: null, bump: () => {} });
+/** 'connecting' until the stream first opens or fails; 'offline' only after an error. */
+export type LinkState = 'connecting' | 'live' | 'offline';
+type Live = { version: number; connected: boolean; link: LinkState; last: { type: string; hash: string } | null; bump: () => void };
+const LiveContext = createContext<Live>({ version: 0, connected: false, link: 'connecting', last: null, bump: () => {} });
 
 export function LiveProvider({ children }: { children: React.ReactNode }) {
   const [version, setVersion] = useState(0);
-  const [connected, setConnected] = useState(false);
+  const [link, setLink] = useState<LinkState>('connecting');
+  const connected = link === 'live';
   const [last, setLast] = useState<Live['last']>(null);
   const bump = useCallback(() => setVersion((v) => v + 1), []);
 
@@ -22,7 +25,7 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     const open = () => {
       es = new EventSource('/api/stream');
       es.onopen = () => {
-        setConnected(true);
+        setLink('live');
         // Refetch everything on (re)connect: covers a cold start where the first fetch failed.
         bump();
       };
@@ -36,7 +39,7 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
         bump();
       };
       es.onerror = () => {
-        setConnected(false);
+        setLink('offline');
         es?.close();
         retry = setTimeout(open, 3000);
       };
@@ -48,7 +51,7 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     };
   }, [bump]);
 
-  return <LiveContext.Provider value={{ version, connected, last, bump }}>{children}</LiveContext.Provider>;
+  return <LiveContext.Provider value={{ version, connected, link, last, bump }}>{children}</LiveContext.Provider>;
 }
 
 export const useLive = () => useContext(LiveContext);

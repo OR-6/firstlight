@@ -61,7 +61,12 @@ export default function RedTeamPage() {
                   <h2 className="font-bold">{s.title}</h2>
                   <p className="mt-0.5 text-[0.88rem] leading-relaxed text-ink-muted">{s.attempted}</p>
                 </div>
-                <button className="btn h-8 shrink-0" onClick={() => run(s.id)} disabled={busy !== null}>
+                <button
+                  className="btn h-8 shrink-0"
+                  onClick={() => run(s.id)}
+                  disabled={busy !== null}
+                  aria-label={busy === s.id ? `Running attack: ${s.title}` : `Run attack: ${s.title}`}
+                >
                   {busy === s.id ? 'Running…' : 'Run attack'}
                 </button>
               </div>

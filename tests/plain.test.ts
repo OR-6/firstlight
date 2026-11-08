@@ -1,0 +1,89 @@
+import { describe, expect, it } from 'vitest';
+import type { RuleResult } from '../src/firewall/types';
+import { noteLang, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
+
+const rule = (id: RuleResult['id'], status: RuleResult['status'], reasonCode: RuleResult['reasonCode'], detail: string, scope: RuleResult['scope'] = 'plan'): RuleResult => ({
+  id,
+  scope,
+  status,
+  reasonCode,
+  detail,
+});
+
+describe('plain-language firewall wording', () => {
+  it('rewrites the approval threshold in plain words', () => {
+    expect(plainRule(rule('R10', 'warn', 'OVER_APPROVAL_THRESHOLD', 'total $680.00 > auto-approve limit $300.00'))).toBe(
+      '$680 is over the $300 that can be sent without review.',
+    );
+  });
+
+  it('keeps every R10 reason and can drop the generic warnings line', () => {
+    const r = rule('R10', 'warn', 'OVER_APPROVAL_THRESHOLD', 'total $680.00 > auto-approve limit $300.00; 1 item(s) blocked; other rules raised warnings');
+    expect(plainRule(r)).toContain('1 household in the plan');
+    expect(plainRule(r)).toContain('Other checks raised warnings.');
+    expect(plainRule(r, { omitWarningsSummary: true })).not.toContain('Other checks');
+  });
+
+  it('describes distance rules with rounded kilometres', () => {
+    expect(plainRule(rule('R2', 'block', 'OUTSIDE_MAX_RADIUS', '343.2 km from epicentre; max radius 300 km', 'item'))).toBe(
+      '343 km from the epicentre, beyond the 300 km limit for any payment.',
+    );
+    expect(plainRule(rule('R2', 'pass', 'TIER_WITHIN_BAND', 'tier A at 53.3 km; max A (band B, +1 tier for mobility impaired)', 'item'))).toBe(
+      '53 km from the epicentre. Tier A is allowed: band B, one tier higher for mobility impaired.',
+    );
+  });
+
+  it('falls back to the raw detail for unrecognised text', () => {
+    expect(plainRule(rule('R5', 'warn', 'BUDGET_SOFT_LIMIT', 'something new'))).toBe('Something new.');
+  });
+
+  it('formats short dollars', () => {
+    expect(usdShort(68000)).toBe('$680');
+    expect(usdShort(8050)).toBe('$80.50');
+  });
+
+  it('puts the approval reason first for an item that needs approval', () => {
+    const reasons = verdictReasons({
+      verdict: 'REQUIRE_APPROVAL',
+      ruleTrace: [rule('R2', 'warn', 'TIER_DOWNGRADED', 'agent requested tier A; 120.0 km allows at most B', 'item'), rule('R10', 'warn', 'OVER_APPROVAL_THRESHOLD', 'total $680.00 > auto-approve limit $300.00; other rules raised warnings')],
+    });
+    expect(reasons[0]).toBe('$680 is over the $300 that can be sent without review.');
+    expect(reasons[1]).toContain('so it was lowered');
+  });
+
+  it('marks replaced notes as English', () => {
+    expect(noteLang({ ruleTrace: [rule('R9', 'warn', 'NOTE_REPLACED', 'note contains a link or domain; fallback text used', 'item')] }, 'es')).toBe('en');
+    expect(noteLang({ ruleTrace: [rule('R9', 'pass', 'NOTE_OK', '42 chars', 'item')] }, 'es')).toBe('es');
+  });
+});
+
+describe('plan headings and summary', () => {
+  const recipients = [
+    { recipientId: 'a', town: 'Macaracas', home: { lat: 7.73, lon: -80.55 } },
+    { recipientId: 'b', town: 'Yaviza', home: { lat: 8.1569, lon: -77.6928 } },
+  ];
+  const plan = {
+    id: 1,
+    status: 'assessed',
+    decision: 'trigger',
+    agent: { reason: null },
+    corroboration: { mode: 'emsc' },
+    recipients,
+    verdict: {
+      totalCents: 12000,
+      planRules: [rule('R8', 'pass', 'TRIGGER_CORROBORATED', 'M7.7 meets threshold; 2 independent sources agree')],
+      items: [{ recipientId: 'a', verdict: 'REQUIRE_APPROVAL', distanceKm: 26.4 }],
+    },
+  };
+  const event = { mag: 7.7, place: '10 km WSW of Pitaloza Arriba, Panama', epicentre: { lat: 7.35, lon: -80.75 } };
+
+  it('titles a plan by its earthquake', () => {
+    expect(planTitle(plan, event)).toBe('M7.7 Panama earthquake: 1 household, $120');
+    expect(planTitle(plan, null)).toBe('Plan 1: 1 household, $120');
+  });
+
+  it('summarises the decision and who was left out', () => {
+    const s = planSummary(plan, event);
+    expect(s).toMatch(/^Trigger: M7\.7 confirmed by two agencies\. 1 of 2 households in the plan\. 1 left out: Yaviza \(\d+ km\)\.$/);
+  });
+});

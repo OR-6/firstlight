@@ -173,3 +173,11 @@
 .ag-cell-wrapper {
   width: 100%;
 }
+/* Cells that wrap (notes, tiers with flags): normal line height, room above and below. */
+.ag-cell.fl-wrap {
+  line-height: 1.45;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  white-space: normal;
+  word-break: break-word;
+}

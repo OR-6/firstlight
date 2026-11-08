@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { EventView, PlanView, StateView } from '@/server/views';
-import { Notice, TONE_HEX } from '@/ui/format';
+import { Notice, StatusMark, TONE_HEX } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 import { MoneyPath, buildStops } from '@/ui/MoneyPath';
 import { AgentPanel, ApprovalForm, EventPanel, PlanHeader, SendPayouts } from '@/ui/panels';
@@ -63,6 +63,7 @@ export default function MissionControl() {
           </Link>
         </p>
       </div>
+      <TryIt plan={plan} />
       <div className="flex flex-wrap items-center gap-3">
         <button className="btn btn-go" onClick={assess} disabled={running || !eventId}>
           {running ? 'Assessing…' : plan ? 'Run a new assessment' : 'Run assessment'}
@@ -85,7 +86,7 @@ export default function MissionControl() {
         <div className="space-y-5 lg:col-span-5">
           {event ? <EventPanel event={event} /> : <div className="panel h-48" aria-busy="true" />}
           {plan ? (
-            <AgentPanel plan={plan} />
+            <AgentPanel plan={plan} event={event} />
           ) : (
             <section className="panel p-5 text-ink-muted">
               <h2 className="text-[1.05rem] font-bold text-ink">No assessment yet</h2>
@@ -105,11 +106,8 @@ export default function MissionControl() {
         <section className="panel overflow-hidden" aria-labelledby="plan-title">
           <div className="space-y-4 border-b border-line-soft p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 id="plan-title" className="sr-only">
-                Plan {plan.id}
-              </h2>
-              <PlanHeader plan={plan} />
-              <p className="text-[0.85rem] text-ink-dim">Select a row to see every firewall check for that recipient.</p>
+              <PlanHeader plan={plan} event={event} headingId="plan-title" />
+              <p className="text-[0.85rem] text-ink-dim">Select a household to see every firewall check for it.</p>
             </div>
             {needsDecision ? <ApprovalForm plan={plan} compact /> : null}
             {canSend ? <SendPayouts plan={plan} /> : null}
@@ -119,6 +117,76 @@ export default function MissionControl() {
       ) : null}
       <RuleDrawer row={row} onClose={close} />
     </div>
+  );
+}
+
+const TRY_IT_KEY = 'firstlight.tryit.hidden';
+
+/**
+ * A quiet four-step guide for a first visit. Each step ticks off as the demo
+ * reaches it. Hiding it is remembered in this browser only.
+ */
+function TryIt({ plan }: { plan: PlanView | null }) {
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    try {
+      setHidden(window.localStorage.getItem(TRY_IT_KEY) === '1');
+    } catch {
+      /* storage blocked: keep showing it */
+    }
+  }, []);
+  if (hidden) return null;
+  const v = plan?.verdict;
+  const steps: { label: React.ReactNode; done: boolean }[] = [
+    { label: 'Run the assessment', done: Boolean(plan) },
+    { label: 'Approve the plan', done: Boolean(plan?.approval?.decision === 'approve' || v?.overall === 'ALLOW') },
+    { label: 'Send the payouts', done: Boolean(plan?.batch) },
+    {
+      label: (
+        <Link href="/redteam" className="font-semibold text-allow underline-offset-2 hover:underline">
+          See the red team try to break it
+        </Link>
+      ),
+      done: false,
+    },
+  ];
+  return (
+    <section aria-labelledby="try-it" className="flex flex-wrap items-start gap-x-5 gap-y-2 border-y border-line-soft py-2.5 text-[0.9rem]">
+      <h2 id="try-it" className="font-semibold">
+        Try it
+      </h2>
+      <ol className="flex flex-1 flex-wrap gap-x-5 gap-y-1.5">
+        {steps.map((s, i) => (
+          <li key={i} className="flex items-center gap-1.5 text-ink-muted">
+            {s.done ? (
+              <span aria-hidden>
+                <StatusMark s="pass" />
+              </span>
+            ) : (
+              <span className="num inline-flex h-4 w-4 items-center justify-center rounded-full border border-ink-dim text-[0.7rem] font-bold leading-none text-ink" aria-hidden>
+                {i + 1}
+              </span>
+            )}
+            <span className={s.done ? 'text-ink-dim' : 'text-ink'}>{s.label}</span>
+            {s.done ? <span className="sr-only">(done)</span> : null}
+          </li>
+        ))}
+      </ol>
+      <button
+        type="button"
+        className="text-[0.85rem] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+        onClick={() => {
+          setHidden(true);
+          try {
+            window.localStorage.setItem(TRY_IT_KEY, '1');
+          } catch {
+            /* ignore */
+          }
+        }}
+      >
+        Hide guide
+      </button>
+    </section>
   );
 }
 

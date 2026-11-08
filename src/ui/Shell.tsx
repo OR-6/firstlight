@@ -71,7 +71,7 @@ function NavLinks({ path, pending, onNavigate }: { path: string; pending: number
 
 function TopBar() {
   const path = usePathname();
-  const { connected } = useLive();
+  const { link } = useLive();
   const { data } = useApi<StateView>('/api/state');
   const [open, setOpen] = useState(false);
   const pending = data?.pendingApprovals ?? 0;
@@ -93,9 +93,14 @@ function TopBar() {
               Pool <span className="num font-bold text-black">{usd(data.pool.balanceCents)}</span>
             </span>
           ) : null}
-          <span className="hidden items-center gap-1.5 text-ink-dim sm:flex" title={connected ? 'Receiving live updates' : 'Reconnecting'}>
-            <span className={`inline-block h-2 w-2 rounded-full ${connected ? 'bg-allow' : 'bg-line'}`} />
-            {connected ? 'Live' : 'Offline'}
+          <span
+            className="hidden items-center gap-1.5 text-ink-dim sm:flex"
+            title={link === 'live' ? 'Receiving live updates' : link === 'offline' ? 'Lost the live connection. Trying again every few seconds.' : 'Opening the live connection'}
+          >
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${link === 'live' ? 'bg-allow' : link === 'offline' ? 'bg-ink-dim' :'border border-line bg-panel'}`}
+            />
+            {link === 'live' ? 'Live' : link === 'offline' ? 'Offline' : 'Connecting…'}
           </span>
           <button
             className="btn h-9 lg:hidden"

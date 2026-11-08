@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react';
 import type { RuleId } from '@/firewall/types';
 import { StatusMark, VerdictChip, usd } from './format';
 import type { PlanRow } from './PlanGrid';
+import { noteLang, plainRule, verdictReasons } from './plain';
 
 /** What each rule checks, in plain words (SPEC §5.4). */
 export const RULE_NAMES: Record<RuleId, string> = {
@@ -22,15 +23,22 @@ export const RULE_NAMES: Record<RuleId, string> = {
 
 export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
+  const open = row !== null;
   useEffect(() => {
-    if (!row) return;
+    if (!open) return;
+    // Remember what opened the drawer (a grid cell, a card, a map marker) and go back to it on close.
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     closeRef.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [row, onClose]);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open, onClose]);
 
   if (!row) return null;
+  const reasons = verdictReasons(row);
   return (
     <div className="fixed inset-0 z-[2000] flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
       <button className="absolute inset-0 bg-black/35" aria-label="Close" onClick={onClose} tabIndex={-1} />
@@ -50,18 +58,24 @@ export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () 
           </button>
         </header>
 
-        <div className="flex items-center gap-4 border-b border-line-soft px-6 py-4">
-          <span className="text-[0.85rem] text-ink-muted">Firewall verdict</span>
-          <VerdictChip v={row.verdict} size="lg" />
-          <span className="num text-[1.4rem] font-[800]">{usd(row.amountCents)}</span>
+        <div className="border-b border-line-soft px-6 py-4">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="text-[0.85rem] text-ink-muted">Firewall verdict</span>
+            <VerdictChip v={row.verdict} size="lg" />
+            <span className="num text-[1.4rem] font-[800]">{usd(row.amountCents)}</span>
+          </div>
+          <ul className="mt-2.5 space-y-1 text-[0.98rem] leading-snug">
+            {reasons.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-4">
           <h3 className="mb-2 text-[0.95rem] font-bold">Firewall checks</h3>
           <ol className="divide-y divide-line-soft">
             {row.ruleTrace.map((r, i) => (
-              <li key={`${r.id}-${i}`} className="grid grid-cols-[2.4rem_1.2rem_1fr] gap-x-2 py-2.5">
-                <span className="num pt-0.5 text-[0.85rem] font-bold text-ink-muted">{r.id}</span>
+              <li key={`${r.id}-${i}`} className="grid grid-cols-[1.2rem_1fr] gap-x-2.5 py-2.5">
                 <span className="pt-1">
                   <StatusMark s={r.status} />
                 </span>
@@ -70,14 +84,16 @@ export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () 
                     {RULE_NAMES[r.id]}
                     {r.scope === 'plan' ? <span className="ml-2 text-[0.78rem] font-normal text-ink-dim">whole plan</span> : null}
                   </p>
-                  <p className="num break-words text-[0.86rem] text-ink-muted">{r.detail}</p>
-                  <p className="text-[0.75rem] text-ink-dim">{r.reasonCode}</p>
+                  <p className="break-words text-[0.88rem] text-ink-muted">{plainRule(r)}</p>
+                  <p className="hash mt-0.5 break-words text-[0.72rem]" title={r.detail}>
+                    {r.id} {r.reasonCode}
+                  </p>
                 </div>
               </li>
             ))}
           </ol>
           <h3 className="mb-1 mt-6 text-[0.95rem] font-bold">Note the recipient will see</h3>
-          <p className="rounded-[var(--radius-control)] border border-line-soft bg-ground px-3 py-2 text-[0.95rem]" lang={row.locale || undefined}>
+          <p className="rounded-[var(--radius-control)] border border-line-soft bg-ground px-3 py-2 text-[0.95rem]" lang={noteLang(row, row.locale)}>
             {row.note}
           </p>
         </div>

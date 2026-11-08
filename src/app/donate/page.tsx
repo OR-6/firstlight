@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useId, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DonationFeed, type FeedItem } from '@/ui/DonationFeed';
-import { Notice, usd } from '@/ui/format';
+import { LoadError, Notice, usd } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 
 type Pool = { balanceUsd: string; totalDisbursedUsd: string; recipientsReached: number; donationsReceivedUsd: string; donationsCount: number };
@@ -52,7 +52,9 @@ function Donate() {
   const rawReceipt = params.get('receipt');
   const receiptId = rawReceipt && RECEIPT_ID.test(rawReceipt) ? rawReceipt : null;
   const errorCode = params.get('error');
-  const { data: pool } = useApi<Pool>('/api/pool');
+  const { data: pool, error: poolError, reload: reloadPool } = useApi<Pool>('/api/pool');
+  // Shown in place of a figure until the pool loads (or if it can't).
+  const pending = poolError ? 'Not available' : 'Loading…';
   const { data: feed } = useApi<{ donations: FeedItem[] }>('/api/donations');
   const cents = (s: string | undefined) => Math.round(Number(s ?? 0) * 100);
 
@@ -79,7 +81,9 @@ function Donate() {
           <h2 id="pool-title" className="text-[1.05rem] font-bold">
             Pool
           </h2>
-          <p className="num mt-1 text-[2.25rem] font-[800] leading-tight">{pool ? usd(cents(pool.balanceUsd)) : '—'}</p>
+          <p className="num mt-1 text-[2.25rem] font-[800] leading-tight" aria-busy={!pool && !poolError}>
+            {pool ? usd(cents(pool.balanceUsd)) : <span className="text-[1.25rem] font-semibold text-ink-dim">{pending}</span>}
+          </p>
           <p className="text-ink-muted">available for relief payouts</p>
           <div className="mt-4 h-3 overflow-hidden rounded-[var(--radius-chip)] border border-line bg-raised" role="img" aria-label={`${Math.round(paidShare)}% of the money in the pool has been paid out`}>
             <div className="h-full bg-allow" style={{ width: `${paidShare}%` }} />
@@ -87,11 +91,18 @@ function Donate() {
           <dl className="num mt-3 grid grid-cols-[1fr_auto] gap-y-1 text-[0.94rem]">
             <dt className="text-ink-muted">Paid to people affected</dt>
             <dd className="font-semibold">
-              {pool ? `${usd(cents(pool.totalDisbursedUsd))} to ${pool.recipientsReached}` : '—'}
+              {pool ? `${usd(cents(pool.totalDisbursedUsd))} to ${pool.recipientsReached}` : <span className="font-normal text-ink-dim">{pending}</span>}
             </dd>
             <dt className="text-ink-muted">Donated</dt>
-            <dd className="font-semibold">{pool ? `${usd(cents(pool.donationsReceivedUsd))} from ${pool.donationsCount}` : '—'}</dd>
+            <dd className="font-semibold">
+              {pool ? `${usd(cents(pool.donationsReceivedUsd))} from ${pool.donationsCount}` : <span className="font-normal text-ink-dim">{pending}</span>}
+            </dd>
           </dl>
+          {poolError ? (
+            <div className="mt-3">
+              <LoadError error={poolError} onRetry={reloadPool} />
+            </div>
+          ) : null}
           <p className="mt-3 text-[0.85rem] text-ink-dim">The demo pool started with a $5,000 sandbox float.</p>
         </section>
 
