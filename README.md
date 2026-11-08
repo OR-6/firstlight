@@ -97,17 +97,22 @@ With the real agent (Claude Opus 5.5, recorded run) and four poisoned news items
 
 ```bash
 git clone https://github.com/OR-6/firstlight && cd firstlight
-cp .env.example .env          # add your PayPal SANDBOX app credentials
+cp .env.example .env          # optional: PayPal SANDBOX app credentials
 cp config/payees.sandbox.example.json config/payees.sandbox.json   # your sandbox personal accounts
-npm i
+npm ci
 npm run dev                   # http://localhost:3000, replay mode, no Anthropic key needed
 ```
 
+**No keys needed to try it.** Replay mode lets you assess the recorded Panama quake, approve or deny, run the red team and verify the audit chain. Sending payouts and taking donations needs PayPal sandbox credentials in `.env`; without them those actions say the credentials aren't configured.
+
 Your sandbox app must be linked to a **US** sandbox business account; others can return `PAYOUT_NOT_AVAILABLE`.
+
+[![CI](https://github.com/OR-6/firstlight/actions/workflows/ci.yml/badge.svg)](https://github.com/OR-6/firstlight/actions/workflows/ci.yml) runs typecheck, tests, lint and the red-team suite on every push.
 
 | Command | What it does |
 |---|---|
 | `npm test` | All tests |
+| `npm run lint` | ESLint |
 | `npm run redteam -- --llm replay` | Attack suite; writes `redteam-report.json` |
 | `npm run fl -- assess` / `approve` / `execute` / `audit` | The loop from the command line |
 | `npm run samaritan` | Scripted donor agent: finds Firstlight via its manifest, donates over MCP within a person's allowance, waits for them to approve on PayPal, recomputes the audit chain itself |
