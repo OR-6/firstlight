@@ -1,13 +1,32 @@
-import { json } from '@/server/http';
+import { z } from 'zod';
+import { HexHash, fail, json, queryOf, readBody, validate } from '@/server/http';
 import { firstlight } from '@/server/runtime';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-/** Recompute the hash chain. ?upTo=<hash> verifies a prefix (donor receipts, SPEC §5.6b). */
-function verify(req: Request) {
-  const upTo = new URL(req.url).searchParams.get('upTo') ?? undefined;
-  if (upTo && !/^[0-9a-f]{64}$/.test(upTo)) return json({ ok: false, reason: 'upTo must be a 64-character hex hash' }, 400);
+/** `upTo`: verify only the prefix ending at this entry hash (donor receipts, SPEC §5.6b). */
+const VerifyInput = z.object({ upTo: HexHash.optional() });
+
+function verify(upTo: string | undefined): Response {
   return json(firstlight().pipeline.audit.verify(upTo));
 }
-export const GET = verify;
-export const POST = verify;
+
+/** Recompute the hash chain. ?upTo=<hash> verifies a prefix. */
+export function GET(req: Request) {
+  try {
+    return verify(validate(VerifyInput, queryOf(req), 'query').upTo);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Same check; `upTo` may come in the query string or the JSON body ({} checks the whole chain). */
+export async function POST(req: Request) {
+  try {
+    const fromQuery = validate(VerifyInput, queryOf(req), 'query').upTo;
+    const fromBody = (await readBody(req, VerifyInput)).upTo;
+    return verify(fromBody ?? fromQuery);
+  } catch (e) {
+    return fail(e);
+  }
+}

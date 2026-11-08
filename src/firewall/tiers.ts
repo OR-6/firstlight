@@ -8,10 +8,6 @@ export function tierAbove(a: Tier, b: Tier): boolean {
   return TIER_RANK[a] > TIER_RANK[b];
 }
 
-export function lowerTier(a: Tier, b: Tier): Tier {
-  return TIER_RANK[a] <= TIER_RANK[b] ? a : b;
-}
-
 /** Highest tier a recipient's distance alone allows, or null outside the max radius. */
 export function distanceBandTier(distanceKm: number, config: FirewallConfig): Tier | null {
   const bands = config.tierMaxDistanceKm;

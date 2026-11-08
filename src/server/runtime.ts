@@ -14,11 +14,18 @@ import { DonationService } from '../donations/service';
 import { Pipeline } from '../pipeline/pipeline';
 import { loadPayees, type PayeeMap } from '../registry/payees';
 import { loadRegistry, type RegistryProfile } from '../registry/registry';
+import { BusyError, NotConfiguredError, baseUrl } from './http';
 
 /**
  * One Firstlight instance per server process (survives dev hot-reload via
  * globalThis). Holds the database, the pipeline, and an event bus that the
  * SSE stream relays to dashboards.
+ *
+ * Everything in this file is per process: the assessment lock, the per-plan
+ * execute lock, the hourly payout cap and the reset cooldown live in memory.
+ * That is correct for the single-instance deployment Firstlight runs as
+ * (render.yaml, one SQLite file). Running several instances would need these
+ * moved into the database; PayPal idempotency keys still stop double payouts.
  */
 export const DEMO_POOL_CENTS = 5_000_00;
 
@@ -71,8 +78,8 @@ function build(): Runtime {
     db,
     audit: pipeline.audit,
     ledger: pipeline.ledger,
-    orders: () => (orders ??= new PayPalOrders()),
-    baseUrl: () => publicBaseUrl() ?? 'http://localhost:3000',
+    orders: () => (orders ??= configured('PAYPAL_NOT_CONFIGURED', () => new PayPalOrders())),
+    baseUrl: () => baseUrl(),
   });
   return {
     donations,
@@ -84,15 +91,30 @@ function build(): Runtime {
     llmMode,
     bus,
     pollers: new Map(),
-    paypal: () => (paypal ??= new PayPalClient(loadPayPalConfig())),
-    payees: () => (payees ??= loadPayees(process.env, new Set(registry.map((r) => r.recipientId)))),
+    paypal: () => (paypal ??= configured('PAYPAL_NOT_CONFIGURED', () => new PayPalClient(loadPayPalConfig()))),
+    payees: () => (payees ??= configured('PAYEES_NOT_CONFIGURED', () => loadPayees(process.env, new Set(registry.map((r) => r.recipientId))))),
   };
 }
 
-/** APP_BASE_URL, else the URL Render injects, else nothing. */
-export function publicBaseUrl(): string | null {
-  const v = process.env.APP_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
-  return v ? v.replace(/\/$/, '') : null;
+const NOT_CONFIGURED: Record<NotConfiguredError['code'], string> = {
+  PAYPAL_NOT_CONFIGURED:
+    'PayPal sandbox credentials not configured. Add your sandbox app client id and secret to .env (see .env.example) to send sandbox payouts. Assessing, approving, the red team and the audit check work without them.',
+  PAYEES_NOT_CONFIGURED:
+    'No sandbox payee map configured, or it is invalid. Set PAYEES_JSON or create config/payees.sandbox.json (see config/payees.sandbox.example.json).',
+};
+
+/**
+ * Build a PayPal-side dependency, turning a missing or bad setup into a typed
+ * 503. The original message goes to the server log only: it can quote config
+ * text (a JSON parse error echoes part of the payee file).
+ */
+function configured<T>(code: NotConfiguredError['code'], make: () => T): T {
+  try {
+    return make();
+  } catch (e) {
+    console.error(`${code}: ${(e as Error).message}`);
+    throw new NotConfiguredError(code, NOT_CONFIGURED[code]);
+  }
 }
 
 export function firstlight(): Runtime {
@@ -121,9 +143,9 @@ export function resetDemo(): Runtime {
 
 let assessing = false;
 
-/** One assessment at a time per server (live mode spends API credit). */
+/** One assessment at a time per process (live mode spends API credit). Throws BusyError if one is running. */
 export async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
-  if (assessing) throw new Error('BUSY');
+  if (assessing) throw new BusyError('An assessment is already running. Try again in a moment.');
   assessing = true;
   try {
     return await fn();
@@ -132,11 +154,13 @@ export async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-const executions: number[] = [];
+/** Payout slots taken in the last hour, oldest first. `token` identifies a slot for refunds. */
+const executions: { token: number; atMs: number }[] = [];
+let nextToken = 1;
 
 /** Give back exactly the slot this request took, when it was refused before anything reached PayPal. */
-export function refundExecutionSlot(slot: number): void {
-  const i = executions.indexOf(slot);
+export function refundExecutionSlot(token: number): void {
+  const i = executions.findIndex((s) => s.token === token);
   if (i >= 0) executions.splice(i, 1);
 }
 
@@ -181,17 +205,16 @@ export function markReset(now = Date.now()): void {
 /**
  * Public-demo guard: real sandbox payout batches per rolling hour, across all
  * visitors and demo resets (the firewall's own R7 limit resets with the DB).
+ * Takes a slot and returns its token (pass it to refundExecutionSlot), or null
+ * when the hourly cap is reached.
  */
-/** Take a payout slot; returns its token (pass it to refundExecutionSlot) or null when the hourly cap is reached. */
 export function takeExecutionSlot(now = Date.now()): number | null {
   const limit = Number(process.env.EXECUTE_LIMIT_PER_HOUR ?? 6);
-  while (executions.length && executions[0]! < now - 3_600_000) executions.shift();
+  while (executions.length && executions[0]!.atMs < now - 3_600_000) executions.shift();
   if (executions.length >= limit) return null;
-  // Unique token even for two requests in the same millisecond.
-  let slot = now;
-  while (executions.includes(slot)) slot += 1e-3;
-  executions.push(slot);
-  return slot;
+  const token = nextToken++;
+  executions.push({ token, atMs: now });
+  return token;
 }
 
 /** Poll a submitted batch every 2 s until it settles (fallback when no webhook reaches us). */
