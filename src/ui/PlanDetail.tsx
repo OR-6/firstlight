@@ -1,13 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { EventView, PlanView } from '@/server/views';
 import { DECISION_ID, goToDecision } from './decision';
 import { ApiError, call } from './live';
 import { MoneyPath, buildStops } from './MoneyPath';
 import { AgentPanel, ApprovalForm, PlanHeader, SendPayouts } from './panels';
 import { PlanGrid, planRows, type PlanRow } from './PlanGrid';
+import { decisionBarText } from './plain';
 import { RuleDrawer, type DrawerStale } from './RuleDrawer';
 
 /** One plan: its path, the agent's reasoning, the per-recipient table and, below it, the decision controls. */
@@ -70,7 +71,42 @@ export function PlanSection({ plan, event, onOpen }: { plan: PlanView; event: Ev
         </div>
       ) : null}
       <FloorPlanOffer plan={plan} />
+      <DecisionBar plan={plan} />
     </section>
+  );
+}
+
+/**
+ * Below 768 px the decision panel sits far down the page, under every household.
+ * While a plan waits on a person, a bar pinned to the bottom of the screen says
+ * so and brings the panel into view. It steps aside once the panel is on screen.
+ */
+function DecisionBar({ plan }: { plan: PlanView }) {
+  const text = decisionBarText(plan);
+  const [panelVisible, setPanelVisible] = useState(false);
+  useEffect(() => {
+    const el = text ? document.getElementById(DECISION_ID) : null;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver(([e]) => setPanelVisible(Boolean(e?.isIntersecting)), { threshold: 0.15 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [text]);
+  if (!text) return null;
+  // No spacer needed: the decision panel sits near the end of the page, and the
+  // bar steps aside whenever the panel is on screen.
+  return (
+    <div
+      className={`fixed inset-x-0 bottom-0 z-[900] border-t-2 border-black bg-hold-fill px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 text-black md:hidden ${panelVisible ? 'hidden' : ''}`}
+      role="region"
+      aria-label="Decision waiting"
+    >
+      <div className="flex items-center gap-3">
+        <p className="num min-w-0 flex-1 text-[0.95rem] font-bold leading-snug">{text}</p>
+        <button type="button" className="btn h-10 shrink-0 border-black px-4 font-bold" onClick={() => goToDecision()}>
+          Review
+        </button>
+      </div>
+    </div>
   );
 }
 

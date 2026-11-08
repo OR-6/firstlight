@@ -38,8 +38,12 @@ export default function QuakeMap({
   const map = useRef<L.Map | null>(null);
   const layer = useRef<L.LayerGroup | null>(null);
   const fitted = useRef(false);
+  // The latest onSelect, for marker click handlers that Leaflet keeps across renders.
+  // Updated after each commit, not during render.
   const select = useRef(onSelect);
-  select.current = onSelect;
+  useEffect(() => {
+    select.current = onSelect;
+  }, [onSelect]);
 
   // Create once per mount; destroy completely on cleanup.
   useEffect(() => {
@@ -94,5 +98,5 @@ export default function QuakeMap({
     }
   }, [event, plan, recipients]);
 
-  return <div ref={el} className="isolate z-0 h-full min-h-[360px] w-full" role="img" aria-label={`Map of the epicentre near ${event.place ?? ''}, payout bands and recipients`} />;
+  return <div ref={el} className="isolate z-0 h-full min-h-[360px] w-full flex-1" role="img" aria-label={`Map of the epicentre near ${event.place ?? ''}, payout bands and recipients`} />;
 }

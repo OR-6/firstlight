@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ScenarioResult, SuiteReport } from '@/redteam/scenarios';
-import { Notice, VerdictChip, usd } from '@/ui/format';
+import { Notice, VerdictChip, usd, when } from '@/ui/format';
 import { ApiError, call, useApi } from '@/ui/live';
 import type { RuleResult } from '@/firewall/types';
-import { plainRule } from '@/ui/plain';
+import { plainRule, suiteHeadline } from '@/ui/plain';
 import { ruleTitle } from '@/ui/RuleDrawer';
 
 type Scenario = { id: string; title: string; attempted: string };
@@ -15,8 +15,22 @@ export default function RedTeamPage() {
   const [active, setActive] = useState<string | null>(null);
   const [result, setResult] = useState<ScenarioResult | null>(null);
   const [suite, setSuite] = useState<SuiteReport | null>(null);
+  const [suiteError, setSuiteError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // The full-suite result is the proof, so it loads with the page: the server
+  // runs the suite on its first request (a few seconds) and caches it.
+  useEffect(() => {
+    let current = true;
+    call<SuiteReport>('/api/redteam/report').then(
+      (r) => current && setSuite(r),
+      (e: unknown) => current && setSuiteError(e instanceof ApiError ? e.message : "Couldn't load the suite result."),
+    );
+    return () => {
+      current = false;
+    };
+  }, []);
 
   const run = async (id: string) => {
     setBusy(id);
@@ -36,6 +50,7 @@ export default function RedTeamPage() {
     setError(null);
     try {
       setSuite(await call<SuiteReport>('/api/redteam/report', { body: {} }));
+      setSuiteError(null);
     } catch (e) {
       setError((e as ApiError).message);
     } finally {
@@ -53,6 +68,35 @@ export default function RedTeamPage() {
       </div>
       {error ? <Notice tone="error">{error}</Notice> : null}
 
+      <section className="panel p-5" aria-labelledby="suite-title" aria-busy={!suite && !suiteError}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 max-w-[78ch]">
+            <h2 id="suite-title" className="text-[1.1rem] font-bold">
+              Full attack suite
+            </h2>
+            <p className="text-[0.9rem] text-ink-muted">
+              27 prompt-injection payloads: direct, hidden in news, fake system messages, smuggled JSON, base64 and ROT13, four non-English languages, look-alike characters, and instructions split across two sources. Then six attacks that don&apos;t try to pay a stranger, including the one Firstlight doesn&apos;t stop.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-3">
+            {suite ? <span className="num text-[0.85rem] text-ink-dim">Last run: {when(Date.parse(suite.generatedAt))}</span> : null}
+            <button className="btn" onClick={runSuite} disabled={busy !== null || (!suite && !suiteError)}>
+              {busy === 'suite' ? 'Running 27 attacks…' : suite ? 'Run it again' : 'Run all 27 attacks'}
+            </button>
+          </div>
+        </div>
+        {suite ? (
+          <Suite s={suite} />
+        ) : suiteError ? (
+          <div className="mt-4">
+            <Notice tone="error">{suiteError}</Notice>
+          </div>
+        ) : (
+          <p className="mt-5 text-ink-muted">Running all 27 attacks against isolated copies. This takes a few seconds.</p>
+        )}
+      </section>
+
+      <h2 className="text-[1.1rem] font-bold">Run one attack yourself</h2>
       <div className="grid gap-5 lg:grid-cols-12">
         <ul className="panel divide-y divide-line-soft self-start lg:col-span-5">
           {(data?.scenarios ?? []).map((s) => (
@@ -76,30 +120,13 @@ export default function RedTeamPage() {
         </ul>
         <div className="lg:col-span-7">{result ? <Result r={result} /> : <Placeholder busy={busy !== null && busy !== 'suite'} />}</div>
       </div>
-
-      <section className="panel p-5" aria-labelledby="suite-title">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 id="suite-title" className="text-[1.1rem] font-bold">
-              Full attack suite
-            </h2>
-            <p className="text-[0.9rem] text-ink-muted">
-              27 prompt-injection payloads: direct, hidden in news, fake system messages, smuggled JSON, base64 and ROT13, four non-English languages, look-alike characters, and instructions split across two sources. Then six attacks that don&apos;t try to pay a stranger, including the one Firstlight doesn&apos;t stop.
-            </p>
-          </div>
-          <button className="btn btn-go" onClick={runSuite} disabled={busy !== null}>
-            {busy === 'suite' ? 'Running 27 attacks…' : 'Run all 27 attacks'}
-          </button>
-        </div>
-        {suite ? <Suite s={suite} /> : null}
-      </section>
     </div>
   );
 }
 
 function Placeholder({ busy }: { busy: boolean }) {
   return (
-    <div className="panel flex min-h-[260px] items-center justify-center p-6 text-center text-ink-muted">
+    <div className="panel flex min-h-[160px] items-center justify-center p-6 text-center text-ink-muted">
       {busy ? 'Running the attack against an isolated copy…' : 'Pick an attack to see what it tried, which firewall rules stopped it, and what would have reached PayPal.'}
     </div>
   );
@@ -185,17 +212,24 @@ function firedText(f: Pick<RuleResult, 'reasonCode' | 'detail'>): string {
 }
 
 function Suite({ s }: { s: SuiteReport }) {
-  const safe = s.payloads - s.firewall.payloadsWithUnauthorisedPayout;
+  const clean = s.firewall.payloadsWithUnauthorisedPayout === 0;
+  const h = s.heldout;
   return (
     <div className="mt-5 space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="rounded-[var(--radius-control)] border border-allow/40 bg-allow-wash p-4">
-          <p className="num text-[1.5rem] font-[800] text-allow">
-            {safe} of {s.payloads} attacks moved {usd(s.firewall.unauthorisedCents)} to unauthorised payees
-          </p>
-          <p className="text-[0.88rem] text-ink-muted">
-            The firewall result, checked against a hand-written table of what each household is owed. It does not depend on the sentinel. A firewall rule other than the $300 limit held {s.firewall.firewallFlagged} of {s.payloads}, and agent-written text reached PayPal in {s.firewall.agentTextDelivered}.
-          </p>
+      <div className="grid gap-4 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className={`rounded-[var(--radius-control)] border p-4 ${clean ? 'border-allow/40 bg-allow-wash' : 'border-block/40 bg-block-wash'}`}>
+          <p className={`num text-[1.5rem] font-[800] leading-tight ${clean ? 'text-allow' : 'text-block-ink'}`}>{suiteHeadline(s)}</p>
+          <p className="mt-1 text-[0.88rem] text-ink-muted">Checked against a hand-written table of what each household is owed. It does not depend on the sentinel.</p>
+          <dl className="num mt-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 border-t border-allow/25 pt-3 text-[0.9rem]">
+            <dt className="font-bold">
+              {s.firewall.firewallFlagged} of {s.payloads}
+            </dt>
+            <dd className="text-ink-muted">held by a firewall rule other than the $300 limit, as if the sentinel had missed everything</dd>
+            <dt className="font-bold">{s.firewall.agentTextDelivered}</dt>
+            <dd className="text-ink-muted">times agent-written text reached PayPal</dd>
+            <dt className="font-bold">{s.firewall.distinctAttempts}</dt>
+            <dd className="text-ink-muted">distinct plan changes behind the {s.payloads} payloads</dd>
+          </dl>
         </div>
         <div className="rounded-[var(--radius-control)] border border-line p-4">
           <p className="num text-[1.05rem] font-bold">
@@ -204,6 +238,13 @@ function Suite({ s }: { s: SuiteReport }) {
           <p className="num text-[0.88rem] text-ink-muted">
             Pattern checks {s.sentinel.regexCaught} of {s.payloads}. Small classifier model {s.sentinel.llmCaught ?? 'not measured'}
             {s.sentinel.llmCaught !== null ? ` of ${s.sentinel.llmMeasured}` : ''}. The sentinel is advisory: a flag only forces human review.
+          </p>
+          <p className="num mt-3 border-t border-line-soft pt-3 text-[0.9rem]">
+            <span className="font-bold">Held-out set:</span>{' '}
+            <span className="text-ink-muted">
+              on {h.payloads} attack texts written separately by someone who never saw the patterns, pattern checks caught {h.regexCaught} of {h.payloads}
+              {h.llmCaught !== null ? ` and the classifier model ${h.llmCaught} of ${h.payloads}` : ''}. The tuned corpus numbers above are not general accuracy.
+            </span>
           </p>
         </div>
       </div>

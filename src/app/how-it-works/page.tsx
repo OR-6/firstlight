@@ -44,7 +44,7 @@ const ROLES: { who: string; uses: string; can: string }[] = [
 const STAGES: { name: string; who: string; does: string; mark: State }[] = [
   { name: 'Earthquake confirmed', who: 'USGS and EMSC', does: 'M6.0 or stronger, or a PAGER orange alert, reported by two independent seismic agencies.', mark: 'done' },
   { name: 'Agent drafts', who: 'The AI agent', does: 'Reads both reports and picks enrolled households and a tier for each. It never sees an email or an amount.', mark: 'done' },
-  { name: 'Firewall checks', who: 'Fixed code, no AI', does: 'Recomputes every amount from the tier table and checks eligibility, limits, budget and duplicates. It can stop the plan.', mark: 'stop' },
+  { name: 'Firewall checks', who: 'Fixed code, no AI', does: 'Recomputes every amount from the tier table and checks eligibility, limits, budget and duplicates. It can stop the plan.', mark: 'checkpoint' },
   { name: 'Person approves', who: 'Aid organisation staff', does: 'Only when the firewall flags something, such as a total over $300. Approving can never raise an amount.', mark: 'wait' },
   { name: 'PayPal pays', who: 'PayPal Payouts', does: 'One batch to the households’ own PayPal accounts, with a note in their language.', mark: 'done' },
 ];
@@ -75,7 +75,7 @@ function PathDiagram() {
         </ol>
       </div>
       <figcaption className="text-[0.85rem] text-ink-dim">
-        The marks are the ones used on Mission control: the octagon is where a plan can be stopped, the diamond is where a person may have to decide.
+        The square is the checkpoint where fixed code checks every plan. On Mission control that stage shows its result instead: a check when the plan is allowed, a diamond when a person has to decide, a red octagon when it is blocked.
       </figcaption>
     </figure>
   );
@@ -165,6 +165,56 @@ export default function HowItWorks() {
           <p className="text-ink-muted">
             The amounts ($120, $80, $40 by distance) are demo values. A real programme sets them as a share of the local minimum expenditure basket and by household size.
           </p>
+        </section>
+
+        <section aria-labelledby="wrong" className={`${PROSE} space-y-3`}>
+          <h2 id="wrong" className="text-[1.15rem] font-bold">
+            If the money doesn&apos;t arrive, or something is wrong
+          </h2>
+          <p>
+            The household contacts the field partner who enrolled them. The payment note tells them to; in a real deployment it names that partner and gives their help line.
+          </p>
+          <ul className="list-disc space-y-1.5 pl-5">
+            <li>
+              The partner checks the payment&apos;s status in PayPal Payouts, shown on the{' '}
+              <Link href="/payouts" className="font-semibold text-allow underline-offset-2 hover:underline">
+                Payouts page
+              </Link>
+              : paid, unclaimed, returned or failed, with PayPal&apos;s reason.
+            </li>
+            <li>
+              A payment nobody has claimed can be cancelled, which puts the money back in the pool. Once the partner has fixed the account details, it is sent again through the same firewall checks.
+            </li>
+            <li>Complaints, such as a wrong amount or a household left out, are logged by the partner and reviewed by the aid organisation.</li>
+            <li>
+              After the payments, the partner contacts a sample of households to check the money arrived, could be turned into cash and was used as needed. Aid organisations call this post-distribution monitoring.
+            </li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="data" className={`${PROSE} space-y-3`}>
+          <h2 id="data" className="text-[1.15rem] font-bold">
+            Personal data
+          </h2>
+          <ul className="list-disc space-y-1.5 pl-5">
+            <li>
+              <span className="font-semibold">Consent at enrolment.</span> The caseworker explains what is recorded, why, and who sees it, and the household agrees before anything is stored.
+            </li>
+            <li>
+              <span className="font-semibold">What the AI agent sees:</span> an id, the town, the distance from the epicentre and a yes or no for whether the household gets a higher tier because of a health or care need. Never the condition
+              itself, a name, an email or a PayPal account.
+            </li>
+            <li>
+              <span className="font-semibold">What PayPal sees,</span> as the payment provider: the household&apos;s PayPal account, the amount and the fixed note. Nothing about why they were chosen.
+            </li>
+            <li>
+              <span className="font-semibold">Home locations</span> are stored at village level in a real deployment. That is enough to work out the distance bands, and it doesn&apos;t point to a house.
+            </li>
+            <li>
+              <span className="font-semibold">Retention.</span> Personal data is kept for the programme and its reporting period, then deleted. A household can ask to be removed from the registry at any time.
+            </li>
+          </ul>
+          <p className="text-ink-muted">The demo&apos;s households are synthetic and their homes are single map points.</p>
         </section>
 
         <section aria-labelledby="give" className={`${PROSE} space-y-3`}>

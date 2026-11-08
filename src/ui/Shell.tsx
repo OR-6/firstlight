@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import type { StateView } from '@/server/views';
 import { LiveProvider, useApi, useLive } from './live';
 import { usd } from './format';
+import { menuButtonLabel } from './plain';
 
 const NAV = [
   { href: '/', label: 'Mission control' },
@@ -74,12 +75,15 @@ function TopBar() {
   const path = usePathname();
   const { link } = useLive();
   const { data } = useApi<StateView>('/api/state');
-  const [open, setOpen] = useState(false);
+  // The menu is open for the page it was opened on, so navigating closes it
+  // without an effect.
+  const [openOn, setOpenOn] = useState<string | null>(null);
+  const open = openOn === path;
+  const setOpen = (o: boolean) => setOpenOn(o ? path : null);
   const pending = data?.pendingApprovals ?? 0;
-  useEffect(() => setOpen(false), [path]);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpenOn(null);
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open]);
@@ -113,10 +117,15 @@ function TopBar() {
             className="btn h-9 lg:hidden"
             aria-expanded={open}
             aria-controls="mobile-nav"
-            onClick={() => setOpen((o) => !o)}
+            aria-label={menuButtonLabel(open, pending)}
+            onClick={() => setOpen(!open)}
           >
             {open ? 'Close menu' : 'Menu'}
-            {!open && pending > 0 ? <span className="num rounded-[var(--radius-chip)] bg-hold-fill px-1.5 text-[0.75rem] font-bold">{pending}</span> : null}
+            {!open && pending > 0 ? (
+              <span className="num rounded-[var(--radius-chip)] bg-hold-fill px-1.5 text-[0.75rem] font-bold" aria-hidden>
+                {pending}
+              </span>
+            ) : null}
           </button>
         </div>
       </div>

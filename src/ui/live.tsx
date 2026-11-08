@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 
 /**
  * Live updates: one EventSource per tab. Every audit append bumps `version`,
@@ -84,33 +84,44 @@ export function useApi<T>(url: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [loading, setLoading] = useState(Boolean(url));
-  const seq = useRef(0);
-
-  const load = useCallback(async () => {
-    const mine = ++seq.current;
+  const [retries, setRetries] = useState(0);
+  // When the url changes, adjust state during render (React's pattern for
+  // resetting state on a prop change) rather than in an effect. A null url
+  // means the thing we were showing no longer exists (e.g. after a demo
+  // reset), so it is cleared. A different url keeps the old data on screen
+  // until the new response arrives.
+  const [shownUrl, setShownUrl] = useState(url);
+  if (url !== shownUrl) {
+    setShownUrl(url);
     if (!url) {
-      // The thing we were showing no longer exists (e.g. after a demo reset).
       setData(null);
       setError(null);
-      setLoading(false);
-      return;
     }
-    try {
-      const d = await call<T>(url);
-      if (mine === seq.current) {
-        setData(d);
-        setError(null);
-      }
-    } catch (e) {
-      if (mine === seq.current) setError(e instanceof ApiError ? e : new ApiError(0, 'NETWORK', "Couldn't reach the server. It may be waking up; this usually takes under a minute."));
-    } finally {
-      if (mine === seq.current) setLoading(false);
-    }
-  }, [url]);
+    setLoading(Boolean(url));
+  }
 
   useEffect(() => {
-    void load();
-  }, [load, version]);
+    if (!url) return;
+    // Only the latest request from this hook may write state.
+    let current = true;
+    call<T>(url).then(
+      (d) => {
+        if (!current) return;
+        setData(d);
+        setError(null);
+        setLoading(false);
+      },
+      (e: unknown) => {
+        if (!current) return;
+        setError(e instanceof ApiError ? e : new ApiError(0, 'NETWORK', "Couldn't reach the server. It may be waking up; this usually takes under a minute."));
+        setLoading(false);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [url, version, retries]);
 
-  return { data, error, loading, reload: load };
+  const reload = useCallback(() => setRetries((n) => n + 1), []);
+  return { data, error, loading, reload };
 }
