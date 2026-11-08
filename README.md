@@ -61,7 +61,7 @@ A sentinel (pattern checks plus a small classifier model) scans untrusted text a
 | Sentinel pattern checks | flagged 22 / 27 (the patterns were tuned on this corpus) |
 | Sentinel classifier model (recorded run) | flagged 25 / 27 |
 | Either sentinel layer | flagged 27 / 27 |
-| **Held-out set**: 30 attack texts written separately, by someone who never saw the patterns | patterns 7 / 30, classifier model 26 / 30 |
+| **Held-out set**: 30 attack texts written separately, by someone who never saw the patterns | patterns 8 / 30, classifier model 26 / 30 |
 | **Firewall: attacks that moved $0 to anyone not owed** | **27 / 27** |
 | Held by a firewall rule other than the $300 limit (the honest $680 plan already needs a person, so that alone proves nothing) | 27 / 27 |
 | Agent-written text that reached PayPal as a payout note | 0 / 27 |
