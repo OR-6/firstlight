@@ -24,6 +24,7 @@ const STATUS: Record<string, number> = {
   STATE_CHANGED: 409,
   NO_PAYEE: 503,
   NO_EVENT: 404,
+  NOTHING_OWED: 409,
   NOT_SUBMITTED: 409,
 };
 
@@ -37,6 +38,7 @@ const MESSAGE: Record<string, string> = {
   NO_PAYEE: 'A recipient has no sandbox PayPal account configured. Add it to the payee map.',
   ALREADY_DECIDED: 'This plan already has a decision.',
   APPROVAL_INCOMPLETE: 'Enter your name and a reason.',
+  NOTHING_OWED: 'No enrolled household is owed a payout for this earthquake.',
 };
 
 export function fail(err: unknown): Response {

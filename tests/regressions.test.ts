@@ -164,3 +164,24 @@ describe('payout item details from PayPal', () => {
     expect(db).toBeTruthy();
   });
 });
+
+describe('firewall floor plan (denial of aid)', () => {
+  it('after a hoax-induced hold, drafts everyone owed at their band, for a person to approve', async () => {
+    const { pipeline } = makePipeline({ llm: scriptedAgent({ ...GOOD_PLAN, decision: 'hold', items: [] }) });
+    const held = await pipeline.assess(replayInput());
+    expect(held.verdict?.overall).toBe('BLOCK');
+    const { verdict } = pipeline.draftFloorPlan(held.planId);
+    expect(verdict.overall).toBe('REQUIRE_APPROVAL');
+    expect(verdict.totalCents).toBe(680_00);
+    expect(verdict.planRules.find((r) => r.id === 'R12')?.reasonCode).toBe('ALL_ELIGIBLE_COVERED');
+    expect(verdict.planRules.map((r) => r.reasonCode)).toContain('AGENT_ESCALATED');
+  });
+
+  it('after households were left out, the floor plan includes them', async () => {
+    const { pipeline } = makePipeline({ llm: scriptedAgent({ ...GOOD_PLAN, items: GOOD_PLAN.items.slice(0, 3) }) });
+    const partial = await pipeline.assess(replayInput());
+    expect(partial.verdict?.planRules.map((r) => r.reasonCode)).toContain('ELIGIBLE_OMITTED');
+    const { verdict } = pipeline.draftFloorPlan(partial.planId);
+    expect(verdict.items.filter((i) => i.amountCents > 0)).toHaveLength(7);
+  });
+});

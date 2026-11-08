@@ -1,3 +1,4 @@
+import { floorPlan } from '../firewall/floor';
 import { runAgent, type AgentResult } from '../agent/agent';
 import { runSentinel, type SentinelReport } from '../agent/sentinel';
 import { evaluatePlan, payableItems } from '../firewall/engine';
@@ -330,6 +331,65 @@ export class Pipeline {
     return (this.deps.db.prepare('SELECT decision, approver, reason FROM approvals WHERE plan_id = ?').get(planId) as
       | { decision: string; approver: string; reason: string }
       | undefined) ?? null;
+  }
+
+  /**
+   * Draft the firewall's own plan for the same event as `fromPlanId` (D91): everyone owed,
+   * at their band, decided by deterministic code. Closes the denial-of-aid gap where a
+   * poisoned feed makes the agent hold, forge an event id or leave households out. The
+   * new plan always needs a person (decision `escalate`) and carries the source plan's
+   * sentinel findings so the reviewer sees why it exists.
+   */
+  draftFloorPlan(fromPlanId: number): { planId: number; verdict: Verdict } {
+    const source = this.planRow(fromPlanId);
+    if (!source) throw new PipelineError('NO_VERDICT', `plan ${fromPlanId} not found`);
+    const event = this.events.get(source.event_id);
+    if (!event) throw new PipelineError('NO_EVENT', `event ${source.event_id} not stored`);
+    const corroboration = JSON.parse(source.corroboration_json) as CorroborationReport;
+    const sentinel = JSON.parse(source.sentinel_json) as SentinelReport;
+    const now = this.clock();
+    const ctx = this.context(event, corroboration, sentinel, now);
+    const prior = this.verdict(fromPlanId);
+    const why = prior
+      ? prior.planRules.filter((r) => r.status !== 'pass').map((r) => r.reasonCode).join(', ') || 'requested by a reviewer'
+      : 'the agent produced no valid plan';
+    const raw = floorPlan(ctx, `plan ${fromPlanId} was ${prior?.overall ?? 'not assessable'} (${why}).`);
+    if (raw.items.length === 0) throw new PipelineError('NOTHING_OWED', 'no enrolled household is owed a payout for this event');
+    const version =
+      ((this.deps.db.prepare('SELECT MAX(version) AS v FROM plans WHERE event_id = ?').get(event.id) as { v: number | null }).v ?? 0) + 1;
+    const planId = Number(
+      this.deps.db
+        .prepare(
+          `INSERT INTO plans (event_id, version, status, raw_plan, agent_json, sentinel_json, corroboration_json, llm_mode, created_ms)
+           VALUES (?, ?, 'assessed', ?, ?, ?, ?, 'firewall', ?)`,
+        )
+        .run(
+          event.id,
+          version,
+          JSON.stringify(raw),
+          JSON.stringify({ model: 'firewall floor plan (deterministic, no LLM)', turns: 0, steps: [], reason: null, fromPlanId }),
+          JSON.stringify(sentinel),
+          JSON.stringify(corroboration),
+          now,
+        ).lastInsertRowid,
+    );
+    this.audit.append('plan.floor_drafted', { planId, fromPlanId, eventId: event.id, version, households: raw.items.length, reason: why });
+    const verdict = evaluatePlan(raw, ctx);
+    this.deps.db
+      .prepare('INSERT INTO verdicts (plan_id, digest, overall, verdict_json, created_ms) VALUES (?, ?, ?, ?, ?)')
+      .run(planId, verdict.digest, verdict.overall, JSON.stringify(verdict), now);
+    this.audit.append('firewall.verdict', {
+      planId,
+      eventId: event.id,
+      version,
+      digest: verdict.digest,
+      overall: verdict.overall,
+      totalCents: verdict.totalCents,
+      paypalRequestId: verdict.paypalRequestId,
+      planRules: verdict.planRules,
+      items: verdict.items.map((i) => ({ recipientId: i.recipientId, verdict: i.verdict, amountCents: i.amountCents, rules: i.ruleTrace.filter((r) => r.scope === 'item') })),
+    });
+    return { planId, verdict };
   }
 
   private planRow(planId: number): PlanRow | undefined {

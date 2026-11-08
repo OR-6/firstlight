@@ -124,3 +124,20 @@ describe('machine strings in plain words', () => {
     expect(flagText([])).toBe('');
   });
 });
+
+describe('plain words for R12 shortfalls and R8 basis risk', () => {
+  const rr = (reasonCode: string, detail: string) => ({ reasonCode, detail }) as Parameters<typeof plainRule>[0];
+  it('names the dollar shortfall', () => {
+    expect(plainRule(rr('ELIGIBLE_OMITTED', '2 eligible household(s) left out of the plan: rcp_03, rcp_05. They would get $160 less in total'))).toBe(
+      'The plan leaves out 2 households who should be paid (rcp_03, rcp_05), $160 in total. A person decides.',
+    );
+    expect(plainRule(rr('TIER_BELOW_BAND', '1 household(s) planned below their band: rcp_04 tier C (band allows A). They would get $80 less in total'))).toBe(
+      'The plan pays 1 household less than their tier allows. They would get $80 less in total. A person decides.',
+    );
+  });
+  it('explains a magnitude-only trigger', () => {
+    expect(plainRule(rr('TRIGGER_MAGNITUDE_ONLY', 'M7 meets the magnitude bar but PAGER is green; USGS expects little impact, so a person checks'))).toBe(
+      'M7 is strong, but USGS expects little impact on people (PAGER green). A person checks before anyone is paid.',
+    );
+  });
+});

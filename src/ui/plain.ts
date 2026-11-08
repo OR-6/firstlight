@@ -138,6 +138,11 @@ export function plainRule(r: Pick<RuleResult, 'reasonCode' | 'detail'>, opts: { 
       m = d.match(/^(M[\d.]+|PAGER \w+) meets threshold; (\d+) independent sources agree/);
       if (m) return `${m[1]} is strong enough to trigger relief, and ${count(Number(m[2]))} independent agencies agree.`;
       break;
+    case 'TRIGGER_MAGNITUDE_ONLY':
+      m = d.match(/^(M[\d.]+) meets the magnitude bar but PAGER is ([\w ]+?);/);
+      return m
+        ? `${m[1]} is strong, but USGS expects little impact on people (PAGER ${m[2]}). A person checks before anyone is paid.`
+        : 'The quake is strong but USGS expects little impact on people. A person checks before anyone is paid.';
     case 'TRIGGER_THRESHOLD_NOT_MET':
       m = d.match(/^(M[\d.]+) < (M[\d.]+) and PAGER (\w+) below (\w+)/);
       if (m) return `${m[1]} is below ${m[2]}, and the ${m[3] === 'none' ? 'missing' : m[3]} alert is below ${m[4]}, so it does not trigger relief.`;
@@ -185,12 +190,16 @@ export function plainRule(r: Pick<RuleResult, 'reasonCode' | 'detail'>, opts: { 
     case 'ALL_ELIGIBLE_COVERED':
       m = d.match(/^all (\d+) eligible/);
       return m ? `All ${plural(Number(m[1]), 'eligible household')} are in the plan at their full tier.` : 'Nobody eligible is left out or underpaid.';
-    case 'ELIGIBLE_OMITTED':
-      m = d.match(/^(\d+) eligible household\(s\) left out of the plan: (.+)$/);
-      return m ? `The plan leaves out ${plural(Number(m[1]), 'household')} who should be paid (${m[2]}). A person decides.` : 'The plan leaves out households who should be paid. A person decides.';
-    case 'TIER_BELOW_BAND':
-      m = d.match(/^(\d+) household/);
-      return `The plan pays ${m ? plural(Number(m[1]), 'household') : 'some households'} less than their tier allows. A person decides.`;
+    case 'ELIGIBLE_OMITTED': {
+      m = d.match(/^(\d+) eligible household\(s\) left out of the plan: (.+?)(?:\. They would get (\$[\d,.]+) less in total)?$/);
+      if (!m) return 'The plan leaves out households who should be paid. A person decides.';
+      return `The plan leaves out ${plural(Number(m[1]), 'household')} who should be paid (${m[2]})${m[3] ? `, ${m[3]} in total` : ''}. A person decides.`;
+    }
+    case 'TIER_BELOW_BAND': {
+      m = d.match(/^(\d+) household.*?(?:They would get (\$[\d,.]+) less in total)?$/);
+      const lost = m?.[2] ? ` They would get ${m[2]} less in total.` : '';
+      return `The plan pays ${m ? plural(Number(m[1]), 'household') : 'some households'} less than their tier allows.${lost} A person decides.`;
+    }
     case 'HOLD_ON_MET_TRIGGER':
       m = d.match(/and (\d+) enrolled household/);
       return `The agent held everything although two agencies confirmed the quake${m ? ` and ${plural(Number(m[1]), 'household')} are owed` : ''}. A person should re-run it.`;
