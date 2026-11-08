@@ -90,7 +90,14 @@ With the real agent (Claude Opus 5.5, recorded run) and four poisoned news items
 
 - **Earthquake:** USGS `us6000u18k`, M7.7 Panama, 2026-10-09, PAGER orange, confirmed by EMSC. Copies of the real USGS and EMSC responses are in `fixtures/events/`.
 - **Agent:** Claude Opus 5.5 with tool use. Replay mode serves recorded responses keyed by a hash of the full request; `npm run record:fixtures` records new ones.
-- **PayPal (sandbox):** Payouts (real batches, idempotent), Orders v2 for donations (PayPal Server SDK, built with the APIMatic Context Plugin), verified webhooks, and polling as a fallback. Payouts use the REST API directly because neither the Server SDK nor PayPal's Agent Toolkit has a Payouts call.
+- **PayPal (sandbox):**
+  - **Payouts**: real batches, idempotent, with unknown outcomes resent under the same `PayPal-Request-Id`. They use the REST API directly, because neither the Server SDK nor PayPal's Agent Toolkit has a Payouts call.
+  - **Orders v2** for donations, through the PayPal Server SDK (built with the APIMatic Context Plugin).
+  - **Verified webhooks**, with polling as a fallback.
+  - **Before a batch:** Firstlight checks the PayPal balance.
+  - **After a batch:** /payouts reconciles it against PayPal's own record. Our hosted batch `9GE626X9SA3NE` matched on all 7 items.
+  - **Unclaimed payouts:** an operator can cancel one so the money returns to the pool.
+  - **Transaction Search** (balance and transaction lookups) needs the sandbox app's "Transaction search" feature. The demo app doesn't have it yet, and the page says so.
 - **Earthquake feed:** the hosted demo replays one real recorded quake so every run is reproducible. `npm run fetch:usgs` reads the live USGS feed; feeding it into the event store is the next step.
 
 ## Quickstart
