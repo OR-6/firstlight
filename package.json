@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "fetch:usgs": "tsx scripts/fetch-usgs.ts"
+    "fetch:usgs": "tsx scripts/fetch-usgs.ts",
+    "paypal:check": "tsx --env-file=.env scripts/paypal-smoke-payout.ts",
+    "smoke:payout": "tsx --env-file=.env scripts/paypal-smoke-payout.ts"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

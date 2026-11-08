@@ -40,6 +40,9 @@ a law: change it here and in code together. Newest first within each section.
 - `audit_log` has triggers blocking UPDATE/DELETE. The hash chain still detects tampering by anyone who drops the triggers.
 - Secret-looking keys (`secret`, `token`, `authorization`, `client_id`, …) are redacted before hashing and storage.
 
-### Not done in M1 (blocked on the user)
-- PayPal developer/sandbox accounts and credentials, and the **$1 Payouts smoke test**.
-- Per the updated SPEC, **the APIMatic Context Plugin must be installed before any PayPal code is written**. No PayPal code exists yet.
+### PayPal (verified 2026-11-08)
+- **APIMatic Context Plugin** (ContextMatic) installed and connected before any PayPal code was written. Its PayPal Server SDK covers Orders, Payments, Vault, Transaction Search and Subscriptions. It does **not** cover Payouts or webhook signature verification, so those use plain `fetch` against the REST API (as SPEC §4 planned). Orders v2 donations (M4) and Transaction Search will be built with the plugin.
+- **The sending sandbox business account must be in a Payouts-enabled country.** The first app was linked to a business account (probably the Netherlands, the developer's home country); its payout returned `403 PAYOUT_NOT_AVAILABLE — You live in a country that is not allowed to send this payout`. A new app linked to a **US** sandbox business account (funded $10,000) worked.
+- **$1 smoke test passed:** batch `DHSSBZRTMH9DW`, PENDING → PROCESSING → SUCCESS in ~22 s, item `SUCCESS`, transaction `7T759407LM597511H`. Run it with `npm run smoke:payout -- --send`; `npm run paypal:check` only fetches a token.
+- The OAuth token response lists scopes, so `paypal:check` can confirm the app has the Payouts scope without moving money.
+- The client refuses to start unless `PAYPAL_ENV=sandbox`, and its base URL is hardcoded to `api-m.sandbox.paypal.com`.
