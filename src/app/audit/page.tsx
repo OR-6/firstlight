@@ -19,6 +19,7 @@ const LABEL: Record<string, string> = {
   'paypal.webhook': 'PayPal webhook (verified)',
   'paypal.webhook.rejected': 'PayPal webhook rejected',
   'execute.refused': 'Payout refused at execution',
+  'payout.fee_booked': 'PayPal fee taken from the pool',
   'plan.floor_drafted': "Firewall drafted its own plan (everyone owed)",
   'donation.created': 'Donation started (waiting for PayPal approval)',
   'donation.captured': 'Donation received into the pool',

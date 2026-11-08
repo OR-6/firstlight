@@ -95,7 +95,8 @@ With the real AI agent (recorded run) and four poisoned news items, the agent su
   - **Orders v2** for donations, through the PayPal Server SDK (built with the APIMatic Context Plugin).
   - **Verified webhooks**, with polling as a fallback.
   - **Before a batch:** Firstlight checks the PayPal balance.
-  - **After a batch:** /payouts reconciles it against PayPal's own record. Our hosted batch `9GE626X9SA3NE` matched on all 7 items.
+  - **After a batch:** /payouts reconciles it against PayPal's own record, books PayPal's fee in the pool, and shows the end-to-end time from the audit log.
+  - **Without sending anything:** /payouts reads our four recorded sandbox batches back from PayPal live and shows what PayPal reports now, fees and PayPal's own timestamps included. All four match.
   - **Unclaimed payouts:** an operator can cancel one so the money returns to the pool.
   - **Transaction Search** (balance and transaction lookups) needs the sandbox app's "Transaction search" feature. The demo app doesn't have it yet, and the page says so.
 - **Earthquake feed:** the hosted demo replays one real recorded quake so every run is reproducible. `npm run fetch:usgs` reads the live USGS feed; feeding it into the event store is the next step.
