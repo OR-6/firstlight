@@ -8,7 +8,8 @@ import { instanceId, type Db } from '../ledger/db';
 import { Ledger, type BatchRow } from '../ledger/ledger';
 import type { LlmClient } from '../llm/client';
 import { PayPalApiError, type PayPalClient } from '../paypal/client';
-import { TERMINAL_BATCH_STATUSES, buildPayoutBatchBody, createPayoutBatch, getPayoutBatch } from '../paypal/payouts';
+import { TERMINAL_BATCH_STATUSES, buildPayoutBatchBody, cancelPayoutItem, createPayoutBatch, getPayoutBatch } from '../paypal/payouts';
+import type { PayPalReporting } from '../paypal/reporting';
 import type { PayeeMap } from '../registry/payees';
 import { toFirewallRegistry, type RegistryProfile } from '../registry/registry';
 import type { CorroborationReport } from '../signals/corroboration';
@@ -77,6 +78,7 @@ export class Pipeline {
   readonly audit: AuditLog;
   readonly events: EventStore;
   private readonly clock: () => number;
+  private readonly cancelling = new Set<string>();
 
   constructor(private readonly deps: PipelineDeps) {
     this.clock = deps.clock ?? Date.now;
@@ -193,7 +195,11 @@ export class Pipeline {
 
   // ── execute ───────────────────────────────────────────────────────────────
 
-  async execute(planId: number, paypal: PayPalClient, payees: PayeeMap): Promise<BatchRow> {
+  /**
+   * `opts.reporting` defaults to `paypal.reporting()` (Transaction Search via the
+   * Server SDK). Pass `null` to skip the PayPal balance check entirely.
+   */
+  async execute(planId: number, paypal: PayPalClient, payees: PayeeMap, opts: { reporting?: PayPalReporting | null } = {}): Promise<BatchRow> {
     const plan = this.planRow(planId);
     const verdict = this.verdict(planId);
     if (!plan || !verdict || plan.raw_plan === null) throw new PipelineError('NO_VERDICT', `plan ${planId} has no verdict`);
@@ -211,6 +217,12 @@ export class Pipeline {
     const resend = existing?.status === 'SUBMIT_UNKNOWN' || existing?.status === 'RESERVED';
     if (existing && !resend) return existing;
 
+    // Every payee must be known, for a resend too: the body below is built from this map.
+    const payable = payableItems(verdict);
+    const missing = payable.filter((i) => !payees.has(i.recipientId)).map((i) => i.recipientId);
+    // Nothing is written: the batch keeps its state and can be resent once the payee map is fixed.
+    if (missing.length > 0) throw new PipelineError('NO_PAYEE', `no sandbox payee for ${missing.join(', ')}`);
+
     let batch = existing;
     if (!batch) {
       // Re-check against the ledger as it is NOW: approval may have been hours ago.
@@ -226,9 +238,15 @@ export class Pipeline {
         this.audit.append('execute.refused', { planId, digest: verdict.digest, reason: 'STATE_CHANGED', freshOverall: fresh.overall, freshDigest: fresh.digest });
         throw new PipelineError('STATE_CHANGED', 'ledger changed since this verdict; reassess the event');
       }
-      const items = payableItems(verdict);
-      const missing = items.filter((i) => !payees.has(i.recipientId)).map((i) => i.recipientId);
-      if (missing.length > 0) throw new PipelineError('NO_PAYEE', `no sandbox payee for ${missing.join(', ')}`);
+      const items = payable;
+      const totalCents = items.reduce((t, i) => t + i.amountCents, 0);
+      // The pool ledger is the policy source of truth; PayPal's own balance is a second
+      // check that the money is really there. Unknown (no scope, network) never blocks.
+      const balance = await checkPayPalBalance(opts.reporting === undefined ? paypal.reporting() : opts.reporting);
+      if (balance.checked && balance.availableCents < totalCents) {
+        this.audit.append('execute.refused', { planId, digest: verdict.digest, reason: 'PAYPAL_BALANCE_LOW', neededCents: totalCents, paypalBalance: balance });
+        throw new PipelineError('PAYPAL_BALANCE_LOW', `PayPal sandbox balance ${balance.availableCents} cents is below the batch total ${totalCents} cents`);
+      }
       const { batchId } = this.ledger.reservePayoutBatch({
         eventId: plan.event_id,
         planVersion: plan.version,
@@ -237,17 +255,17 @@ export class Pipeline {
         verdictDigest: verdict.digest,
         items: items.map((i) => ({ recipientId: i.recipientId, amountCents: i.amountCents })),
       });
-      this.audit.append('payout.reserved', { planId, batchId, digest: verdict.digest, totalCents: verdict.totalCents, items: items.length });
+      this.audit.append('payout.reserved', { planId, batchId, digest: verdict.digest, totalCents: verdict.totalCents, items: items.length, paypalBalance: balance });
       batch = this.ledger.getBatch(batchId)!;
     }
 
-    const items = payableItems(verdict);
+    const items = payable;
     const body = buildPayoutBatchBody({
       senderBatchId: `firstlight-${plan.event_id}-v${plan.version}-${instanceId(this.deps.db).slice(0, 8)}`,
       emailSubject: 'Emergency relief payment (SANDBOX)',
       emailMessage: 'This is an automatic relief payment from the Firstlight sandbox demo. No real money moves.',
       items: items.map((i) => ({
-        receiverEmail: payees.get(i.recipientId)!,
+        receiverEmail: payees.get(i.recipientId) as string, // checked above
         amountCents: i.amountCents,
         note: i.note,
         senderItemId: `${plan.event_id}:${i.recipientId}`,
@@ -314,6 +332,67 @@ export class Pipeline {
     return { batch: this.ledger.getBatch(batchId)!, terminal, items };
   }
 
+  // ── return path ───────────────────────────────────────────────────────────
+
+  /**
+   * Operator action: cancel one UNCLAIMED payout item at PayPal. PayPal sends the
+   * money back to the sender and answers with the item's new status (RETURNED);
+   * the ledger books that through the usual status path, which re-credits the
+   * pool exactly once. Refused unless the ledger has the item as UNCLAIMED with
+   * PayPal's payout_item_id.
+   */
+  async cancelItem(batchId: number, recipientId: string, paypal: PayPalClient, by = 'console'): Promise<{ recipientId: string; status: string; paypalItemId: string }> {
+    const batch = this.ledger.getBatch(batchId);
+    const item = batch ? this.ledger.batchItems(batchId).find((i) => i.recipient_id === recipientId) : undefined;
+    if (!batch || !item) throw new PipelineError('NO_ITEM', `batch ${batchId} has no item for ${recipientId}`);
+    if (item.status !== 'UNCLAIMED') throw new PipelineError('NOT_UNCLAIMED', `item is ${item.status}; only UNCLAIMED items can be cancelled`);
+    if (!item.paypal_item_id) throw new PipelineError('NO_PAYPAL_ITEM', 'PayPal has not reported a payout_item_id for this item yet');
+    const key = `${batchId}:${recipientId}`;
+    if (this.cancelling.has(key)) throw new PipelineError('IN_PROGRESS', 'this item is already being cancelled');
+    this.cancelling.add(key);
+    try {
+      let res: Awaited<ReturnType<typeof cancelPayoutItem>>;
+      try {
+        res = await cancelPayoutItem(paypal, item.paypal_item_id);
+      } catch (err) {
+        this.audit.append('paypal.payout.item.cancel_failed', {
+          batchId,
+          recipientId,
+          paypalItemId: item.paypal_item_id,
+          by,
+          message: (err as Error).message.slice(0, 300),
+          debugId: err instanceof PayPalApiError ? err.debugId : null,
+        });
+        // PayPal may have refused because the item moved on (claimed, already returned): re-read it.
+        if (batch.paypal_batch_id) await this.poll(batchId, paypal).catch(() => undefined);
+        throw err;
+      }
+      const from = item.status;
+      // Book exactly what PayPal answered; no status in the answer leaves the item as it was.
+      const norm = this.ledger.setItemStatus(item.event_id, recipientId, res.body.transaction_status ?? item.status);
+      this.ledger.setItemDetails(item.event_id, recipientId, {
+        paypalItemId: res.body.payout_item_id,
+        transactionId: res.body.transaction_id,
+        errorName: res.body.errors?.name ?? null,
+      });
+      this.audit.append('paypal.payout.item.canceled', {
+        batchId,
+        paypalBatchId: batch.paypal_batch_id,
+        recipientId,
+        paypalItemId: item.paypal_item_id,
+        by,
+        from,
+        to: norm.status,
+        transactionStatus: res.body.transaction_status ?? null,
+        unknownStatus: norm.unknown,
+        debugId: res.debugId,
+      });
+      return { recipientId, status: norm.status, paypalItemId: item.paypal_item_id };
+    } finally {
+      this.cancelling.delete(key);
+    }
+  }
+
   // ── helpers ───────────────────────────────────────────────────────────────
 
   /** Exactly what the agent submitted for a plan (untrusted JSON), or null. */
@@ -360,4 +439,21 @@ export function maskEmail(email: string): string {
 
 function maskReceivers(body: ReturnType<typeof buildPayoutBatchBody>) {
   return { ...body, items: body.items.map((i) => ({ ...i, receiver: maskEmail(i.receiver) })) };
+}
+
+/** What the executor learned about the PayPal account balance (recorded in the audit log). */
+export type PayPalBalanceCheck =
+  | { checked: true; availableCents: number; totalCents: number; asOf: string | null }
+  | { checked: false; reason: 'SKIPPED' | 'MISSING_SCOPE' | 'UNAVAILABLE'; detail: string };
+
+/** Ask PayPal for the USD balance. Never throws: anything but a clear answer is "not checked". */
+export async function checkPayPalBalance(reporting: PayPalReporting | null): Promise<PayPalBalanceCheck> {
+  if (!reporting) return { checked: false, reason: 'SKIPPED', detail: 'No reporting client given.' };
+  try {
+    const b = await reporting.usdBalance();
+    if (!b.available) return { checked: false, reason: b.reason, detail: b.detail };
+    return { checked: true, availableCents: b.availableCents, totalCents: b.totalCents, asOf: b.asOf };
+  } catch (err) {
+    return { checked: false, reason: 'UNAVAILABLE', detail: String((err as Error)?.message ?? err).slice(0, 160) };
+  }
 }

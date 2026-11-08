@@ -83,3 +83,26 @@ export function getPayoutBatch(client: PayPalClient, payoutBatchId: string): Pro
 
 /** Batch statuses after which polling can stop. */
 export const TERMINAL_BATCH_STATUSES = ['SUCCESS', 'DENIED', 'CANCELED'] as const;
+
+/** One payout item as PayPal reports it (GET or cancel of /v1/payments/payouts-item/{id}). */
+export type PayoutItemDetails = {
+  payout_item_id: string;
+  payout_batch_id?: string;
+  transaction_id?: string;
+  transaction_status?: string;
+  payout_item?: { receiver?: string; amount?: { value: string; currency: string }; sender_item_id?: string };
+  errors?: { name?: string; message?: string };
+};
+
+const ITEM_ID = /^[A-Z0-9]{6,40}$/i;
+
+/**
+ * Cancel an UNCLAIMED payout item (POST /v1/payments/payouts-item/{id}/cancel).
+ * PayPal only accepts this while the item is unclaimed; the money goes back to
+ * the sender and the item comes back as RETURNED. Not in the Server SDK.
+ */
+export function cancelPayoutItem(client: PayPalClient, payoutItemId: string): Promise<PayPalResponse<PayoutItemDetails>> {
+  if (!ITEM_ID.test(payoutItemId)) throw new Error(`invalid payout_item_id: ${payoutItemId}`);
+  // Empty body with a JSON Content-Type, as PayPal's reference shows (some POSTs refuse a missing type).
+  return client.request<PayoutItemDetails>('POST', `/v1/payments/payouts-item/${payoutItemId}/cancel`, { rawBody: '' });
+}

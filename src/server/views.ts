@@ -1,6 +1,9 @@
 import 'server-only';
 import type { SentinelReport } from '../agent/sentinel';
-import { paypalConfigured } from '../paypal/client';
+import { paypalConfigured, type PayPalClient } from '../paypal/client';
+import { reconcileBatch, type BatchReconciliation, type LedgerBatchInput } from '../paypal/reconcile';
+import { instanceId } from '../ledger/db';
+import type { BatchRow } from '../ledger/ledger';
 import type { Verdict } from '../firewall/types';
 import type { AuditEntry } from '../ledger/audit';
 import type { CorroborationReport } from '../signals/corroboration';
@@ -182,6 +185,7 @@ export function batchesView() {
     plan_id: number | null;
   }[];
   const towns = new Map(rt.registry.map((r) => [r.recipientId, r.town]));
+  const webhooks = verifiedWebhookCounts();
   return rows.map((b) => ({
     id: b.id,
     planId: b.plan_id,
@@ -191,6 +195,8 @@ export function batchesView() {
     status: b.status,
     createdMs: b.created_ms,
     polling: rt.pollers.has(b.id),
+    /** PayPal webhook deliveries for this batch that passed verify-webhook-signature. */
+    verifiedWebhooks: b.paypal_batch_id ? (webhooks.get(b.paypal_batch_id) ?? 0) : 0,
     items: rt.pipeline.ledger.batchItems(b.id).map((i) => ({
       recipientId: i.recipient_id,
       town: towns.get(i.recipient_id) ?? '',
@@ -198,8 +204,75 @@ export function batchesView() {
       status: i.status,
       transactionId: i.transaction_id,
       errorName: i.error_name,
+      /** PayPal accepts a cancel only for UNCLAIMED items, by payout_item_id. */
+      canCancel: i.status === 'UNCLAIMED' && Boolean(i.paypal_item_id),
     })),
   }));
+}
+
+/** Verified webhook deliveries per PayPal batch id, from the audit log (rejected ones are logged separately). */
+function verifiedWebhookCounts(): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const e of firstlight().pipeline.audit.entries()) {
+    if (e.type !== 'paypal.webhook') continue;
+    const id = (e.payload as { payoutBatchId?: unknown }).payoutBatchId;
+    if (typeof id === 'string') counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// ── reconciliation with PayPal ───────────────────────────────────────────────
+
+export type ReconcileView =
+  | { configured: false; batches: []; message: string }
+  | { configured: true; batches: BatchReconciliation[] };
+
+const RECONCILE_TTL_MS = 30_000;
+const RECONCILE_MAX_BATCHES = 10;
+const reconcileCache = new Map<string, { at: number; result: Promise<BatchReconciliation> }>();
+
+/**
+ * Compare the latest submitted batches with PayPal (read-only). Cached for 30 s per
+ * batch state, because every live update on /payouts refetches this view.
+ * Never throws: a PayPal failure is reported per batch.
+ */
+export async function reconcileView(now = Date.now()): Promise<ReconcileView> {
+  const rt = firstlight();
+  if (!paypalConfigured()) return { configured: false, batches: [], message: 'PayPal sandbox credentials are not set on this server, so nothing can be compared.' };
+  let paypal: PayPalClient;
+  try {
+    paypal = rt.paypal();
+  } catch {
+    return { configured: false, batches: [], message: 'PayPal sandbox credentials are not usable on this server.' };
+  }
+  const rows = rt.db.prepare('SELECT * FROM payout_batches WHERE paypal_batch_id IS NOT NULL ORDER BY id DESC LIMIT ?').all(RECONCILE_MAX_BATCHES) as BatchRow[];
+  for (const [k, v] of reconcileCache) if (now - v.at > RECONCILE_TTL_MS) reconcileCache.delete(k);
+  const batches = await Promise.all(
+    rows.map((b) => {
+      const input: LedgerBatchInput = {
+        batchId: b.id,
+        eventId: b.event_id,
+        paypalBatchId: b.paypal_batch_id,
+        status: b.status,
+        createdMs: b.created_ms,
+        items: rt.pipeline.ledger.batchItems(b.id).map((i) => ({
+          recipientId: i.recipient_id,
+          amountCents: i.amount_cents,
+          status: i.status,
+          paypalItemId: i.paypal_item_id,
+          transactionId: i.transaction_id,
+        })),
+      };
+      // Same ledger state → same answer for 30 s. Include the database id so a reset never reuses a result.
+      const key = JSON.stringify([instanceId(rt.db), input]);
+      const hit = reconcileCache.get(key);
+      if (hit) return hit.result;
+      const result = reconcileBatch(input, paypal, paypal.reporting(), now);
+      reconcileCache.set(key, { at: now, result });
+      return result;
+    }),
+  );
+  return { configured: true, batches };
 }
 
 export function auditView(limit = 300) {

@@ -3,7 +3,8 @@
 import { AgGridReact } from 'ag-grid-react';
 import Link from 'next/link';
 import { useState } from 'react';
-import type { BatchView } from '@/server/views';
+import type { Difference, BatchReconciliation } from '@/paypal/reconcile';
+import type { BatchView, ReconcileView } from '@/server/views';
 import { Notice, StatusChip, itemStatus, usd, when, LoadError, Loading } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 import { SandboxEvidence } from '@/ui/SandboxEvidence';
@@ -11,10 +12,69 @@ import { gridTheme } from '@/ui/PlanGrid';
 
 type Item = BatchView['items'][number];
 
-function Batch({ b }: { b: BatchView }) {
+const FIELD: Record<Difference['field'], string> = {
+  batch_status: 'Batch status',
+  batch_total: 'Batch total',
+  missing_at_paypal: 'Not in PayPal’s batch',
+  missing_in_ledger: 'In PayPal’s batch but not our ledger',
+  amount: 'Amount',
+  currency: 'Currency',
+  status: 'Status',
+  transaction_id: 'Transaction id',
+  search_status: 'Transaction Search status',
+  search_amount: 'Transaction Search amount',
+  search_missing: 'Not found in Transaction Search after 3 hours',
+};
+
+/** What reconciliation found for one batch, in plain words. */
+function Reconciled({ r, state }: { r: BatchReconciliation | undefined; state: 'loading' | 'error' | 'done' }) {
+  if (!r && state === 'error') return <p className="text-[0.88rem] text-ink-muted">Couldn&apos;t compare with PayPal just now.</p>;
+  if (!r && state === 'loading') return <p className="text-[0.88rem] text-ink-muted">Comparing with PayPal…</p>;
+  if (!r) return null;
+  const search = r.transactionSearch;
+  const searchNote =
+    search.state === 'matches'
+      ? `Transaction Search has all ${search.indexed} transactions.`
+      : search.state === 'not_indexed_yet'
+        ? `Transaction Search: ${search.waiting} not indexed yet (PayPal takes up to 3 hours), ${search.indexed} found.`
+        : search.state === 'missing_scope'
+          ? 'Transaction Search is not enabled for this sandbox app, so only the batch was compared.'
+          : search.state === 'unavailable'
+            ? 'Transaction Search could not be reached, so only the batch was compared.'
+            : null;
+  const fees = r.feesCents !== null && r.feesCents > 0 ? ` PayPal fees ${usd(r.feesCents)}.` : '';
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {r.state === 'matches' ? <StatusChip label="Reconciled with PayPal" tone="allow" /> : null}
+        {r.state === 'differences' ? <StatusChip label={`${r.differences.length} ${r.differences.length === 1 ? 'difference' : 'differences'} from PayPal`} tone="block" /> : null}
+        {r.state === 'in_progress' ? <StatusChip label="PayPal still processing" tone="hold" /> : null}
+        {r.state === 'unavailable' ? <StatusChip label="Not compared" tone="muted" /> : null}
+        <span className="text-[0.88rem] text-ink-muted">
+          {r.state === 'matches' ? `All ${r.items} items agree with PayPal's batch: amount, status and transaction id.${fees}` : null}
+          {r.state === 'in_progress' ? `Compared at ${when(r.checkedMs)}; PayPal reports the batch as ${(r.paypalBatchStatus ?? '').toLowerCase()}.` : null}
+          {r.state === 'unavailable' || r.state === 'not_submitted' ? r.detail : null}
+          {searchNote ? ` ${searchNote}` : null}
+        </span>
+      </div>
+      {r.differences.length > 0 && r.state !== 'in_progress' ? (
+        <ul className="space-y-1 text-[0.88rem]">
+          {r.differences.map((d, n) => (
+            <li key={n} className="num">
+              <span className="font-semibold">{d.recipientId ?? 'Batch'}</span>: {FIELD[d.field]}. Ours {d.ledger ?? 'none'}, PayPal {d.paypal ?? 'none'}.
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconciliation: BatchReconciliation | undefined; reconcileState: 'loading' | 'error' | 'done' }) {
   const { bump } = useLive();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState<string | null>(null);
   const paid = b.items.filter((i) => i.status === 'SUCCESS');
   const batchLike = { verdict: { overall: 'ALLOW', items: [] }, approval: null, batch: { status: b.status, items: b.items } };
   const refresh = async () => {
@@ -29,6 +89,20 @@ function Batch({ b }: { b: BatchView }) {
       setBusy(false);
     }
   };
+  const cancel = async (i: Item) => {
+    if (!window.confirm(`Cancel the unclaimed ${usd(i.amountCents)} payout to ${i.recipientId}? PayPal returns the money to the pool.`)) return;
+    setCancelling(i.recipientId);
+    setError(null);
+    try {
+      await call(`/api/batches/${b.id}/items/${encodeURIComponent(i.recipientId)}/cancel`, { body: {} });
+      bump();
+    } catch (e) {
+      setError((e as ApiError).message);
+    } finally {
+      setCancelling(null);
+    }
+  };
+  const anyCancellable = b.items.some((i) => i.canCancel);
   return (
     <section className="panel overflow-hidden" aria-label={`PayPal batch ${b.paypalBatchId ?? b.id}`}>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line-soft p-5">
@@ -52,6 +126,9 @@ function Batch({ b }: { b: BatchView }) {
           <span className="font-bold">{paid.length}</span> of {b.items.length} paid,{' '}
           <span className="font-bold">{usd(paid.reduce((t, i) => t + i.amountCents, 0))}</span> of {usd(b.items.reduce((t, i) => t + i.amountCents, 0))}
         </p>
+        <p className="num text-[0.9rem] text-ink-muted">
+          <span className="font-bold text-ink">{b.verifiedWebhooks}</span> {b.verifiedWebhooks === 1 ? 'webhook' : 'webhooks'} from PayPal, signature verified
+        </p>
         <div className="ml-auto flex items-center gap-3">
           {b.polling ? <span className="text-[0.85rem] text-hold">Checking PayPal every 2 s</span> : null}
           <button className="btn h-8" onClick={refresh} disabled={busy || !b.paypalBatchId}>
@@ -59,6 +136,11 @@ function Batch({ b }: { b: BatchView }) {
           </button>
         </div>
       </div>
+      {b.paypalBatchId ? (
+        <div className="border-b border-line-soft px-5 py-3">
+          <Reconciled r={reconciliation} state={reconcileState} />
+        </div>
+      ) : null}
       {error ? (
         <div className="p-3">
           <Notice tone="error">{error}</Notice>
@@ -69,6 +151,7 @@ function Batch({ b }: { b: BatchView }) {
         domLayout="autoHeight"
         rowData={b.items}
         getRowId={(p) => p.data.recipientId}
+        context={{ cancelling }}
         columnDefs={[
           { field: 'recipientId', headerName: 'Recipient', width: 140, cellClass: 'font-semibold' },
           { field: 'town', headerName: 'Town', flex: 1, minWidth: 150 },
@@ -90,6 +173,21 @@ function Batch({ b }: { b: BatchView }) {
             valueGetter: (p) => (p.data?.errorName ? p.data.errorName.replaceAll('_', ' ').toLowerCase() : (p.data?.transactionId ?? '')),
             cellClassRules: { 'text-block-ink': (p) => !!p.data?.errorName },
           },
+          ...(anyCancellable
+            ? [
+                {
+                  headerName: 'Return',
+                  width: 170,
+                  sortable: false,
+                  cellRenderer: (p: { data: Item }) =>
+                    p.data.canCancel ? (
+                      <button className="btn btn-stop h-7 px-2.5 text-[0.85rem]" onClick={() => cancel(p.data)} disabled={cancelling !== null}>
+                        {cancelling === p.data.recipientId ? 'Cancelling…' : 'Cancel payout'}
+                      </button>
+                    ) : null,
+                },
+              ]
+            : []),
         ]}
       />
     </section>
@@ -99,19 +197,25 @@ function Batch({ b }: { b: BatchView }) {
 export default function PayoutsPage() {
   const { data, error, reload } = useApi<{ batches: BatchView[] }>('/api/batches');
   const batches = data?.batches ?? [];
+  const submitted = batches.some((b) => b.paypalBatchId);
+  const rec = useApi<ReconcileView>(submitted ? '/api/reconcile' : null);
+  const byBatch = new Map((rec.data?.batches ?? []).map((r) => [r.batchId, r]));
+  const reconcileState = rec.data ? 'done' : rec.error ? 'error' : 'loading';
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-[1.4rem] font-[800]">Payouts</h1>
         <p className="mt-1 max-w-[72ch] text-ink-muted">
-          Every batch sent to PayPal Payouts in the sandbox. Statuses update live from PayPal webhooks, and from polling every 2 s when no webhook can reach this server.
+          Every batch sent to PayPal Payouts in the sandbox. Statuses update live from PayPal webhooks, and from polling every 2 s when no webhook can reach this server. Each batch is
+          also compared with PayPal&apos;s own record of it.
         </p>
       </div>
       <LoadError error={error} onRetry={reload} />
       {!data && !error ? <Loading what="payouts" /> : null}
       {data && batches.length === 0 ? <p className="panel p-5 text-ink-muted">No payouts sent yet. Approve a plan and send it from its page.</p> : null}
+      {rec.data && !rec.data.configured && submitted ? <Notice>{rec.data.message}</Notice> : null}
       {batches.map((b) => (
-        <Batch key={b.id} b={b} />
+        <Batch key={b.id} b={b} reconciliation={byBatch.get(b.id)} reconcileState={reconcileState} />
       ))}
       <SandboxEvidence />
     </div>

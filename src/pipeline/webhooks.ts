@@ -6,6 +6,28 @@ import type { Pipeline } from './pipeline';
 
 export type WebhookOutcome = { status: number; body: Record<string, unknown> };
 
+/** One `paypal.webhook.rejected` audit entry per this window at most. */
+export const REJECTED_WINDOW_MS = 60_000;
+const rejections = new WeakMap<Db, { lastWrittenMs: number; unwritten: number }>();
+
+/**
+ * Count a delivery PayPal's verify call refused. Returns the count to write (this one
+ * plus any held back since the last entry), or null when an entry was written less
+ * than a minute ago (the delivery is then counted into the next entry).
+ */
+function countRejection(db: Db, now: number): number | null {
+  const s = rejections.get(db) ?? { lastWrittenMs: -Infinity, unwritten: 0 };
+  rejections.set(db, s);
+  if (now - s.lastWrittenMs < REJECTED_WINDOW_MS) {
+    s.unwritten++;
+    return null;
+  }
+  const count = s.unwritten + 1;
+  s.lastWrittenMs = now;
+  s.unwritten = 0;
+  return count;
+}
+
 /** What the webhook handler needs from the donation side (DonationService implements it). */
 export interface DonationWebhookSink {
   onCaptureCompleted(orderId: string | undefined, captureId: string, amountCents: number | null): unknown;
@@ -42,8 +64,12 @@ export async function handlePayPalWebhook(input: {
   const { pipeline, db } = input;
   // Only deliveries PayPal itself checked and refused go in the audit log. Malformed or
   // unsigned requests are refused without a write, so they can't flood the chain.
+  // Those are collapsed to at most one entry a minute, carrying how many were refused.
   const reject = (status: number, reason: string, extra: Record<string, unknown> = {}): WebhookOutcome => {
-    if (reason === 'SIGNATURE_INVALID') pipeline.audit.append('paypal.webhook.rejected', { reason, transmissionId: input.headers.get('paypal-transmission-id'), ...extra });
+    if (reason === 'SIGNATURE_INVALID') {
+      const count = countRejection(db, input.now ?? Date.now());
+      if (count !== null) pipeline.audit.append('paypal.webhook.rejected', { reason, transmissionId: input.headers.get('paypal-transmission-id'), ...extra, count, windowMs: REJECTED_WINDOW_MS });
+    }
     return { status, body: { error: reason } };
   };
 

@@ -5,8 +5,10 @@
  *
  * Plain fetch, no SDK: the PayPal Server SDK (checked via the APIMatic
  * ContextMatic plugin, 2026-11-08) does not cover Payouts or webhook
- * verification, which are the calls this module exists for.
+ * verification, which are the calls this module exists for. Reporting
+ * (balances, Transaction Search) is in the SDK and lives in reporting.ts.
  */
+import { SdkReporting, type PayPalReporting } from './reporting';
 
 export const PAYPAL_SANDBOX_BASE_URL = 'https://api-m.sandbox.paypal.com';
 
@@ -57,6 +59,7 @@ type Token = { accessToken: string; expiresAt: number; scope: string; appId: str
 
 export class PayPalClient {
   private token: Token | null = null;
+  private reportingApi: PayPalReporting | null = null;
 
   constructor(
     private readonly config: PayPalConfig,
@@ -92,6 +95,15 @@ export class PayPalClient {
       appId: typeof b.app_id === 'string' ? b.app_id : null,
     };
     return this.token;
+  }
+
+  /**
+   * Balances and Transaction Search via the Server SDK, with the same credentials.
+   * Calls are skipped (reported as MISSING_SCOPE) when this client's token lacks the
+   * reporting scope, so stubbed clients in tests never reach the network.
+   */
+  reporting(): PayPalReporting {
+    return (this.reportingApi ??= new SdkReporting(this, this.config));
   }
 
   /** Authenticated JSON request. `requestId` becomes the PayPal-Request-Id idempotency header. */
