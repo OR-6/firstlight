@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { RuleResult } from '../src/firewall/types';
-import { draftLang, extraFields, findingTitle, flagText, noteLang, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
+import { defaultFirewallConfig } from '../src/firewall/config';
+import { agentSummary, draftLang, exceptionItems, extraFields, findingTitle, flagText, noteChip, noteLang, outerLimitKm, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
 
 const rule = (id: RuleResult['id'], status: RuleResult['status'], reasonCode: RuleResult['reasonCode'], detail: string, scope: RuleResult['scope'] = 'plan'): RuleResult => ({
   id,
@@ -113,7 +114,9 @@ describe('machine strings in plain words', () => {
   it('gives each R9 and R12 finding its own title', () => {
     const r9 = ['PLAN_CLEAN', 'PLAN_UNKNOWN_FIELDS', 'INJECTION_SUSPECTED', 'EXCEPTION_REQUESTED', 'AGENT_ESCALATED', 'NOTE_OK'].map(findingTitle);
     expect(r9.every((x) => typeof x === 'string' && x.length > 0)).toBe(true);
-    expect(new Set(r9.slice(0, 5)).size).toBe(5);
+    expect(new Set(r9).size).toBe(6);
+    expect(findingTitle('NOTE_OK')).toBe('Draft note');
+    expect(findingTitle('EXCEPTION_REQUESTED')).toBe('Exceptions');
     expect(findingTitle('ELIGIBLE_OMITTED')).toBe('Eligible households left out');
     // Single-finding rules keep the rule's own name.
     expect(findingTitle('REGISTERED_ELIGIBLE')).toBeNull();
@@ -139,5 +142,79 @@ describe('plain words for R12 shortfalls and R8 basis risk', () => {
     expect(plainRule(rr('TRIGGER_MAGNITUDE_ONLY', 'M7 meets the magnitude bar but PAGER is green; USGS expects little impact, so a person checks'))).toBe(
       'M7 is strong, but USGS expects little impact on people (PAGER green). A person checks before anyone is paid.',
     );
+  });
+});
+
+describe('agent decision summary and exception requests', () => {
+  const cfg = defaultFirewallConfig();
+  const recipients = [
+    { recipientId: 'rcp_01', town: 'Macaracas', home: { lat: 7.73, lon: -80.55 } },
+    { recipientId: 'rcp_05', town: 'Santiago de Veraguas', home: { lat: 8.1, lon: -80.98 } },
+    { recipientId: 'rcp_08', town: 'Yaviza', home: { lat: 8.1569, lon: -77.6928 } },
+  ];
+  const plan = {
+    status: 'assessed',
+    agent: { reason: null },
+    corroboration: { mode: 'emsc' },
+    recipients,
+    exceptionRequests: [
+      { recipientId: 'rcp_01', reason: 'USGS reports 1 death in Macaracas.' },
+      { recipientId: 'rcp_99', reason: 'Pay my cousin too.' },
+      'not an object',
+    ],
+    verdict: {
+      totalCents: 20000,
+      planRules: [rule('R8', 'pass', 'TRIGGER_CORROBORATED', 'M7.7 meets threshold; 2 independent sources agree')],
+      items: [
+        { recipientId: 'rcp_01', verdict: 'REQUIRE_APPROVAL', distanceKm: 26.4 },
+        { recipientId: 'rcp_05', verdict: 'REQUIRE_APPROVAL', distanceKm: 60.2 },
+      ],
+    },
+  };
+  const event = { mag: 7.7, epicentre: { lat: 7.35, lon: -80.75 } };
+
+  it("lists each exception with its town, the agent's reason and what to check", () => {
+    const items = exceptionItems(plan);
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({ recipientId: 'rcp_01', town: 'Macaracas', reason: 'USGS reports 1 death in Macaracas.' });
+    expect(items[0]!.check).toMatch(/field partner in Macaracas/);
+    expect(items[0]!.check).toMatch(/tier amount only/);
+    expect(items[1]).toMatchObject({ recipientId: 'rcp_99', town: null });
+    expect(items[1]!.check).toMatch(/not enrolled/);
+  });
+
+  it('summarises trigger, plan, who was left out and why, and exceptions', () => {
+    const rows = agentSummary(plan, event, cfg);
+    expect(rows.map((r) => r.label)).toEqual(['Trigger', 'In the plan', 'Left out', 'Exceptions']);
+    expect(rows[0]!.text).toBe('Met: M7.7 is over the M6.0 bar, and two independent agencies (USGS and EMSC) confirm it.');
+    expect(rows[1]!.text).toBe('2 of 3 enrolled households, $200.');
+    expect(rows[2]!.text).toMatch(/^1 household: Yaviza \(\d+ km\), beyond the 300 km payout limit\.$/);
+    expect(rows[3]!.text).toBe('2 households for a person to check: Macaracas, rcp_99.');
+  });
+
+  it('names an eligible household the agent left out', () => {
+    const omitted = {
+      ...plan,
+      exceptionRequests: [],
+      recipients: recipients.slice(0, 2),
+      verdict: {
+        ...plan.verdict,
+        planRules: [...plan.verdict.planRules, rule('R12', 'warn', 'ELIGIBLE_OMITTED', '1 eligible household(s) left out of the plan: rcp_05. They would get $80 less in total')],
+        items: plan.verdict.items.slice(0, 1),
+      },
+    };
+    const rows = agentSummary(omitted, event, cfg);
+    expect(rows[2]!.text).toMatch(/Santiago de Veraguas \(\d+ km\), owed a payment, but the agent left it out/);
+    expect(rows[3]!.text).toBe('None asked for.');
+  });
+
+  it('scales the outer band with magnitude', () => {
+    expect(outerLimitKm(7.7, cfg)).toBe(300);
+    expect(outerLimitKm(6.8, cfg)).toBeCloseTo(180);
+  });
+
+  it('labels the note by language instead of repeating it', () => {
+    expect(noteChip({ amountCents: 12000 }, 'es')).toBe('es, fixed note');
+    expect(noteChip({ amountCents: 0 }, 'es')).toBe('en, fixed note');
   });
 });

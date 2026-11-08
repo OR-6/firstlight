@@ -60,6 +60,8 @@ export default function MissionControl() {
   // one by one and don't scroll. With reduced motion, everything at once.
   const slow = useBrowserValue(() => new URLSearchParams(window.location.search).get('pace') === 'slow', false);
   const [revealed, setRevealed] = useState<number | null>(null);
+  // Plans this tab ran itself: the shared-demo notice is only for plans someone else left behind.
+  const [ranHere, setRanHere] = useState<number[]>([]);
   const [pacing, setPacing] = useState<number | null>(null);
 
   useEffect(() => {
@@ -97,6 +99,7 @@ export default function MissionControl() {
     try {
       const p = await call<PlanView>(`/api/events/${eventId}/assess`, { body: { redteam: poison } });
       scrollFor.current = p.id;
+      setRanHere((ids) => [...ids, p.id]);
       bump();
     } catch (e) {
       setRevealed(null);
@@ -112,26 +115,9 @@ export default function MissionControl() {
   };
 
   const mode = llmLine(state?.llmMode);
-  // Before the first run (or after a reset) the run button leads, beside the board.
+  // Before the first run (or after a reset) the run button leads; the layout stays the same after a run.
   const empty = state ? !state.latestPlanId : true;
   const stops = pacedStops(buildStops(event, plan), revealed);
-  const runButton = (
-    <button className={`btn btn-go ${empty ? 'h-14 w-full px-6 text-[1.15rem] font-[800]' : ''}`} onClick={assess} disabled={running || !eventId}>
-      {running ? 'Assessing…' : plan ? 'Run a new assessment' : 'Run assessment'}
-    </button>
-  );
-  const poisonBox = (
-    <label className="flex items-start gap-2 text-[0.9rem] text-ink-muted">
-      <input type="checkbox" checked={poison} onChange={(e) => setPoison(e.target.checked)} className="mt-[3px] h-4 w-4 shrink-0 accent-[var(--color-allow)]" />
-      Also feed it four fake news items that try to redirect the money (red-team test)
-    </label>
-  );
-  const notices = (
-    <>
-      {error ? <Notice tone="error">{error}</Notice> : null}
-      {eventError ? <Notice tone="error">{eventError.message}</Notice> : null}
-    </>
-  );
   const board = <MoneyPath stops={stops} onDecide={goToDecision} paced={revealed !== null} />;
   const nearby = event ? householdsWithin(event.recipients, event.epicentre, OUTER_BAND_KM) : null;
 
@@ -139,42 +125,39 @@ export default function MissionControl() {
     <div className="space-y-5">
       <div>
         <h1 className="text-[1.5rem] font-[800]">Mission control</h1>
-        <p className="mt-0.5 max-w-[78ch] text-[0.94rem] text-ink-dim">
-          Earthquake relief cash in minutes, no application needed. For aid organisations that enrol households before a disaster. PayPal sandbox: no real money moves.
+        <p className="mt-1 max-w-[70ch] text-[1.1rem] font-semibold leading-snug">
+          Earthquake relief cash in minutes, no application needed, for aid organisations that enrol households before a disaster.
         </p>
         <p className="mt-2 max-w-[78ch] text-ink-muted">
-          A real M7.7 earthquake hit Panama on 9 October 2026. Run the assessment to watch the agent draft relief payouts for the households enrolled near it, and the firewall decide what can be paid.{' '}
+          A real M7.7 earthquake hit Panama on 9 October 2026. Run the assessment to watch the agent draft relief payouts for the households enrolled near it, and the firewall decide what can be paid. PayPal sandbox: no real money
+          moves.{' '}
           <Link href="/how-it-works" className="font-semibold text-allow underline-offset-2 hover:underline">
             How it works
           </Link>
         </p>
       </div>
       <TryIt plan={plan} />
-      {empty ? (
-        <>
-          {/* Before a run: the run button leads, beside the board it sets moving. */}
-          <div className="grid gap-5 lg:grid-cols-[17rem_minmax(0,1fr)] lg:items-stretch">
-            <section aria-label="Run the assessment" className="panel flex flex-col gap-3 p-4">
-              {runButton}
-              {poisonBox}
-              {mode ? <p className="text-[0.85rem] text-ink-dim">{mode}</p> : null}
-            </section>
-            {board}
-          </div>
-          {notices}
-        </>
-      ) : (
-        <>
-          <div className="flex flex-wrap items-center gap-3">
-            {runButton}
-            {poisonBox}
-            {mode ? <span className="text-[0.85rem] text-ink-dim">{mode}</span> : null}
-            <ResetDemo />
-          </div>
-          {notices}
-          {board}
-        </>
-      )}
+      {plan && !ranHere.includes(plan.id) ? <SharedDemoNotice key={plan.id} createdMs={plan.createdMs} /> : null}
+      {/* One layout before and after a run: the controls bar, then the board, full width. */}
+      <section aria-label="Run the assessment" className="panel flex flex-wrap items-center gap-x-5 gap-y-3 p-4">
+        <button className="btn btn-go h-12 w-full px-6 text-[1.05rem] font-[800] sm:w-auto sm:min-w-[15.5rem]" onClick={assess} disabled={running || !eventId}>
+          {running ? 'Assessing…' : plan ? 'Run a new assessment' : 'Run assessment'}
+        </button>
+        <div className="min-w-[min(100%,18rem)] max-w-[52ch] flex-1 space-y-1">
+          <label className="flex items-start gap-2 text-[0.9rem] text-ink-muted">
+            <input type="checkbox" checked={poison} onChange={(e) => setPoison(e.target.checked)} className="mt-[3px] h-4 w-4 shrink-0 accent-[var(--color-allow)]" />
+            Also feed it four fake news items that try to redirect the money (red-team test)
+          </label>
+          {mode ? <p className="pl-6 text-[0.85rem] text-ink-dim">{mode}</p> : null}
+        </div>
+        {/* Kept in the layout before a run (hidden), so nothing moves when it appears. */}
+        <div className={`ml-auto ${empty ? 'invisible' : ''}`} aria-hidden={empty || undefined}>
+          <ResetDemo />
+        </div>
+      </section>
+      {error ? <Notice tone="error">{error}</Notice> : null}
+      {eventError ? <Notice tone="error">{eventError.message}</Notice> : null}
+      {board}
 
       <div className="grid gap-5 lg:grid-cols-12">
         <div className="space-y-5 lg:col-span-5">
@@ -339,13 +322,38 @@ function MapLegend() {
   );
 }
 
+/** A plan older than this, which this tab didn't run, was most likely left by another visitor. */
+const SHARED_AFTER_MS = 2 * 60_000;
+
+/**
+ * The demo's data is shared by everyone who opens it. When a judge arrives to
+ * find someone else's plan, say so quietly and offer the reset.
+ */
+function SharedDemoNotice({ createdMs }: { createdMs: number }) {
+  // Read once when this plan first shows (keyed by plan id), so the notice doesn't pop in later.
+  const [old] = useState(() => Date.now() - createdMs > SHARED_AFTER_MS);
+  const [hidden, setHidden] = useState(false);
+  if (!old || hidden) return null;
+  return (
+    <section aria-label="Shared demo" className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[var(--radius-control)] border border-line bg-raised px-3 py-2 text-[0.9rem] text-ink-muted">
+      <p className="min-w-[min(100%,16rem)] flex-1">Someone already ran this demo. Continue, or reset to start fresh.</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" className="btn h-8" onClick={() => setHidden(true)}>
+          Continue
+        </button>
+        <ResetDemo />
+      </div>
+    </section>
+  );
+}
+
 function ResetDemo() {
   const { bump } = useLive();
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="ml-auto flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       {err ? (
         <span role="alert" className="text-[0.85rem] text-block-ink">
           {err}

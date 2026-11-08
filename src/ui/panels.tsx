@@ -4,7 +4,11 @@ import { useId, useState } from 'react';
 import type { EventView, PlanView } from '@/server/views';
 import { ApiError, call, useLive } from './live';
 import { Notice, PAGER, StatusChip, StatusMark, planStatus, usd, when } from './format';
-import { plainRule, planSummary, planTitle } from './plain';
+import { defaultFirewallConfig } from '@/firewall/config';
+import { agentSummary, exceptionItems, plainRule, planTitle, type ExceptionItem } from './plain';
+
+/** The firewall's payout bands, for naming why a household was left out (pure config). */
+const BANDS = defaultFirewallConfig();
 
 export function EventPanel({ event }: { event: EventView }) {
   const corr = event.corroboration;
@@ -83,7 +87,14 @@ export function AgentPanel({ plan, event = null }: { plan: PlanView; event?: Eve
           {plan.llmMode === 'firewall' ? 'Firewall floor plan, no AI' : `AI agent, ${plan.agent.turns} turns`}{recorded ? ', recorded run replayed' : plan.llmMode === 'record' ? ', live run (recorded)' : plan.llmMode === 'scripted' ? ', scripted' : ', live'}
         </span>
       </div>
-      <p className="mt-2 max-w-[72ch] text-[0.98rem] font-semibold leading-snug">{planSummary(plan, event)}</p>
+      <dl className="mt-3 grid max-w-[72ch] grid-cols-[6.5rem_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[0.94rem] leading-snug">
+        {agentSummary(plan, event, BANDS).map((r) => (
+          <div key={r.key} className="contents">
+            <dt className="text-ink-muted">{r.label}</dt>
+            <dd className={r.key === 'trigger' ? 'font-semibold' : ''}>{r.text}</dd>
+          </div>
+        ))}
+      </dl>
       {plan.rationale ? (
         <div className="mt-2 max-w-[72ch]">
           <button
@@ -146,6 +157,30 @@ function decisionReasons(plan: PlanView): { key: string; status: 'warn' | 'block
   ].filter((x) => x.text);
 }
 
+/**
+ * The agent's exception requests, one per household: who, the agent's reason
+ * in its own words (untrusted, shown as text), and what the reviewer checks.
+ */
+function ExceptionList({ items }: { items: ExceptionItem[] }) {
+  return (
+    <ol className="mt-2 space-y-2">
+      {items.map((x, i) => (
+        <li key={`${x.recipientId}-${i}`} className="rounded-[var(--radius-control)] border border-line-soft bg-panel px-3 py-2">
+          <p className="leading-snug">
+            <span className="font-semibold">{x.town ?? 'Not enrolled'}</span> <span className="num text-[0.85rem] text-ink-dim">{x.recipientId}</span>
+          </p>
+          <dl className="mt-1 grid grid-cols-[minmax(0,7.5rem)_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.9rem] leading-snug">
+            <dt className="text-ink-muted">Agent&apos;s reason</dt>
+            <dd className="text-ink-muted">&ldquo;{x.reason}&rdquo;</dd>
+            <dt className="text-ink-muted">Check</dt>
+            <dd>{x.check}</dd>
+          </dl>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** Approve or deny a plan. Same names on the buttons and in the result. */
 export function ApprovalForm({ plan, event = null, compact = false }: { plan: PlanView; event?: EventView | null; compact?: boolean }) {
   const { bump } = useLive();
@@ -156,6 +191,7 @@ export function ApprovalForm({ plan, event = null, compact = false }: { plan: Pl
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reasons = decisionReasons(plan);
+  const exceptions = exceptionItems(plan);
 
   const decide = async (d: 'approve' | 'deny') => {
     setBusy(d);
@@ -187,13 +223,15 @@ export function ApprovalForm({ plan, event = null, compact = false }: { plan: Pl
             <span className="pt-[3px]">
               <StatusMark s={r.status} />
             </span>
-            <span className="min-w-0 break-words">
+            <div className="min-w-0 break-words">
               {r.who ? <span className="font-semibold">{r.who}: </span> : null}
               {r.text}
-            </span>
+              {r.key === 'EXCEPTION_REQUESTED' && exceptions.length ? <ExceptionList items={exceptions} /> : null}
+            </div>
           </li>
         ))}
       </ul>
+      {exceptions.length && !reasons.some((r) => r.key === 'EXCEPTION_REQUESTED') ? <ExceptionList items={exceptions} /> : null}
       <div className="mt-4 grid gap-2 sm:grid-cols-[minmax(0,14rem)_1fr]">
         <div className="grid gap-1">
           <label htmlFor={nameId} className="text-[0.875rem] text-ink-muted">

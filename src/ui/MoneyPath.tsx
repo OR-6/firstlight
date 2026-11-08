@@ -205,7 +205,8 @@ export function MoneyPath({ stops, onDecide, paced = false }: { stops: Stop[]; o
             const next = stops[i + 1];
             const reached = s.state !== 'idle';
             return (
-              <li key={stageKey(s, paced)} className={`relative min-w-0 px-3 pb-4 pt-4 lg:px-4 ${paced && reached ? 'fl-reveal' : ''}`}>
+              // min-h: room for a detail line and its audit link before the run, so the board keeps its height after it.
+              <li key={stageKey(s, paced)} className={`relative min-h-[9.8rem] min-w-0 px-3 pb-4 pt-4 lg:px-4 ${paced && reached ? 'fl-reveal' : ''}`}>
                 <div className="mb-2.5 flex h-5 items-center" aria-hidden>
                   <Mark state={s.state} color={s.color} />
                   {next ? (
@@ -222,7 +223,7 @@ export function MoneyPath({ stops, onDecide, paced = false }: { stops: Stop[]; o
                 <p className="text-[0.85rem] text-white/80">{s.name}</p>
                 <p className={`mt-0.5 text-[1.05rem] font-bold leading-snug ${reached ? 'text-white' : 'text-white/55'}`}>{s.headline}</p>
                 {s.detail ? (
-                  <p className="num mt-0.5 truncate text-[0.875rem] text-white/85" title={s.detail}>
+                  <p className="num mt-0.5 text-[0.875rem] leading-snug text-white/85 [overflow-wrap:anywhere]" title={s.detail}>
                     {s.detail}
                   </p>
                 ) : null}

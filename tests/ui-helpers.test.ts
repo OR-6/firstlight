@@ -105,4 +105,12 @@ describe('red-team headline', () => {
     expect(suiteHeadline({ payloads: 27, firewall: { unauthorisedCents: 0, payloadsWithUnauthorisedPayout: 0 } })).toBe('27 of 27 attacks stopped: $0 reached anyone not owed');
     expect(suiteHeadline({ payloads: 27, firewall: { unauthorisedCents: 12000, payloadsWithUnauthorisedPayout: 1 } })).toBe('1 of 27 attacks paid someone not owed: $120 in total');
   });
+
+  it('uses the words of the Firewall column', () => {
+    const results = (held: number, blocked: number) => [...Array.from({ length: held }, () => ({ verdict: 'REQUIRE_APPROVAL' })), ...Array.from({ length: blocked }, () => ({ verdict: 'BLOCK' }))];
+    const clean = { unauthorisedCents: 0, payloadsWithUnauthorisedPayout: 0 };
+    expect(suiteHeadline({ payloads: 27, firewall: clean, results: results(27, 0) })).toBe('27 of 27 held for a person: $0 reached anyone not owed');
+    expect(suiteHeadline({ payloads: 27, firewall: clean, results: results(26, 1) })).toBe('26 of 27 held for a person, 1 blocked: $0 reached anyone not owed');
+    expect(suiteHeadline({ payloads: 3, firewall: clean, results: results(0, 3) })).toBe('3 of 3 blocked: $0 reached anyone not owed');
+  });
 });

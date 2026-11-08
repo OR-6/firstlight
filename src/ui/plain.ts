@@ -258,11 +258,11 @@ const FINDING_TITLES: Record<string, string> = {
   PLAN_EVENT_MISMATCH: 'Plan names the right earthquake',
   PLAN_UNKNOWN_FIELDS: 'Extra fields in the plan',
   INJECTION_SUSPECTED: 'Sentinel flag',
-  EXCEPTION_REQUESTED: 'Exceptions the agent asked for',
+  EXCEPTION_REQUESTED: 'Exceptions',
   AGENT_HOLD: 'The agent held',
   AGENT_ESCALATED: 'The agent asked a person',
-  NOTE_OK: "The agent's draft note",
-  NOTE_REPLACED: "The agent's draft note",
+  NOTE_OK: 'Draft note',
+  NOTE_REPLACED: 'Draft note',
   ELIGIBLE_OMITTED: 'Eligible households left out',
   TIER_BELOW_BAND: 'Households paid below their tier',
   HOLD_ON_MET_TRIGGER: 'Held although the trigger was met',
@@ -356,11 +356,29 @@ export function menuButtonLabel(open: boolean, pending: number): string {
   return `Menu, ${plural(pending, 'approval')} waiting`;
 }
 
-/** The red-team suite in one line: "27 of 27 attacks stopped: $0 reached anyone not owed". */
-export function suiteHeadline(s: { payloads: number; firewall: { unauthorisedCents: number; payloadsWithUnauthorisedPayout: number } }): string {
+/**
+ * The red-team suite in one line, in the words of its Firewall column:
+ * "27 of 27 held for a person: $0 reached anyone not owed". A mix reads
+ * "20 of 27 held for a person, 7 blocked: …".
+ */
+export function suiteHeadline(s: {
+  payloads: number;
+  firewall: { unauthorisedCents: number; payloadsWithUnauthorisedPayout: number };
+  results?: readonly { verdict: string | null }[];
+}): string {
   const bad = s.firewall.payloadsWithUnauthorisedPayout;
-  if (bad === 0) return `${s.payloads} of ${s.payloads} attacks stopped: $0 reached anyone not owed`;
-  return `${bad} of ${s.payloads} attacks paid someone not owed: ${usdShort(s.firewall.unauthorisedCents)} in total`;
+  if (bad > 0) return `${bad} of ${s.payloads} attacks paid someone not owed: ${usdShort(s.firewall.unauthorisedCents)} in total`;
+  const rs = s.results ?? [];
+  const n = (v: string) => rs.filter((r) => r.verdict === v).length;
+  const parts = ([
+    [n('REQUIRE_APPROVAL'), 'held for a person'],
+    [n('BLOCK'), 'blocked'],
+    [n('ALLOW'), 'allowed'],
+  ] as const).filter(([c]) => c > 0);
+  const [first, ...rest] = parts;
+  if (!first) return `${s.payloads} of ${s.payloads} attacks stopped: $0 reached anyone not owed`;
+  const lead = `${first[0]} of ${s.payloads} ${first[1]}`;
+  return `${[lead, ...rest.map(([c, w]) => `${c} ${w}`)].join(', ')}: $0 reached anyone not owed`;
 }
 
 type SummaryPlan = {
@@ -416,4 +434,153 @@ function haversineKm(a: { lat: number; lon: number }, b: { lat: number; lon: num
   const r = (d: number) => (d * Math.PI) / 180;
   const h = Math.sin(r(b.lat - a.lat) / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(r(b.lon - a.lon) / 2) ** 2;
   return 2 * 6371.0088 * Math.asin(Math.sqrt(h));
+}
+
+// ── The agent's decision and its exception requests, as structured items ──
+
+/** One exception the agent asked a person to review, with what to check. */
+export type ExceptionItem = { recipientId: string; town: string | null; reason: string; check: string };
+
+type ExceptionPlan = {
+  exceptionRequests: readonly unknown[];
+  recipients: readonly { recipientId: string; town: string }[];
+  verdict: { items: readonly { recipientId: string; verdict: string }[] } | null;
+};
+
+/**
+ * The agent's exception requests (its own words, untrusted) with the household's
+ * town from the registry and what the reviewer should check before deciding.
+ * Approving never raises an amount, so the check is a follow-up, not a top-up.
+ */
+export function exceptionItems(plan: ExceptionPlan): ExceptionItem[] {
+  const towns = new Map(plan.recipients.map((r) => [r.recipientId, r.town]));
+  const verdicts = new Map((plan.verdict?.items ?? []).map((i) => [i.recipientId, i.verdict]));
+  return plan.exceptionRequests.flatMap((raw) => {
+    if (!raw || typeof raw !== 'object') return [];
+    const o = raw as { recipientId?: unknown; reason?: unknown };
+    const recipientId = typeof o.recipientId === 'string' ? o.recipientId.trim().slice(0, 64) : '';
+    const reason = typeof o.reason === 'string' ? o.reason.trim() : '';
+    if (!recipientId && !reason) return [];
+    const town = towns.get(recipientId) ?? null;
+    return [{ recipientId: recipientId || 'No id given', town, reason: reason || 'No reason given.', check: exceptionCheck(reason, town, verdicts.get(recipientId)) }];
+  });
+}
+
+function exceptionCheck(reason: string, town: string | null, verdict: string | undefined): string {
+  if (!town) return 'This id is not enrolled, so it cannot be paid whatever you decide. Check why the agent named it.';
+  if (verdict === 'BLOCK') return `The firewall blocked this household and approving won't change that. Ask the field partner in ${town} to follow up.`;
+  if (!verdict) return `This household is not in the plan and approving can't add it. Ask the field partner in ${town} to follow up.`;
+  const t = reason.toLowerCase();
+  if (/\b(kill|killed|death|deaths|dead|died|fatal)/.test(t))
+    return `Ask the field partner in ${town} to call the household and see whether it needs more than this payment. Approving pays the tier amount only.`;
+  if (/injur|hospital|missing|displac|destroy|collaps/.test(t)) return `Ask the field partner in ${town} to check on the household. Approving pays the tier amount only.`;
+  return 'Check the reason against the USGS event page. Approving pays the tier amount only.';
+}
+
+/** One line of the agent decision panel's summary. */
+export type SummaryRow = { key: string; label: string; text: string };
+
+type AgentSummaryPlan = {
+  status: string;
+  agent: { reason: string | null };
+  corroboration: { mode: string };
+  exceptionRequests: readonly unknown[];
+  recipients: readonly { recipientId: string; town: string; home: { lat: number; lon: number } }[];
+  verdict: {
+    totalCents: number;
+    planRules: readonly RuleResult[];
+    items: readonly { recipientId: string; verdict: string; distanceKm: number | null; ruleTrace?: readonly RuleResult[] }[];
+  } | null;
+};
+type BandConfig = {
+  tierMaxDistanceKm: { C: number };
+  bandScaleByMagnitude: readonly { minMagnitude: number; factor: number }[];
+  trigger?: { minMagnitude: number };
+};
+
+/** The outer payout band for this magnitude (the firewall scales its bands down for smaller quakes). */
+export function outerLimitKm(mag: number, bands: BandConfig): number {
+  const f = bands.bandScaleByMagnitude.find((b) => mag >= b.minMagnitude)?.factor ?? 1;
+  return bands.tierMaxDistanceKm.C * f;
+}
+
+/**
+ * The agent decision panel's short summary, one row each: why the trigger was
+ * or wasn't met, how many households are in the plan, who was left out and why,
+ * and how many exceptions the agent raised.
+ */
+export function agentSummary(plan: AgentSummaryPlan, event: SummaryEvent | null | undefined, bands: BandConfig): SummaryRow[] {
+  if (plan.status === 'agent_failed') return [{ key: 'trigger', label: 'Decision', text: `No plan.${plan.agent.reason ? ` ${sentence(plan.agent.reason)}` : ''}` }];
+  const v = plan.verdict;
+  const r8 = v?.planRules.find((r) => r.id === 'R8');
+  const mag = event ? `M${event.mag.toFixed(1)}` : (r8?.detail.match(/^(M[\d.]+)/)?.[1] ?? 'The earthquake');
+  let trigger: string;
+  switch (r8?.reasonCode) {
+    case 'TRIGGER_CORROBORATED': {
+      const n = Number(r8.detail.match(/(\d+) independent/)?.[1] ?? 2);
+      const bar = bands.trigger ? ` M${bands.trigger.minMagnitude.toFixed(1)}` : '';
+      trigger = `Met: ${mag} is over the${bar} bar, and ${count(n)} independent agencies${plan.corroboration.mode === 'emsc' ? ' (USGS and EMSC)' : ''} confirm it.`;
+      break;
+    }
+    case 'TRIGGER_MAGNITUDE_ONLY':
+      trigger = `${mag} is over the magnitude bar, but USGS expects little impact on people, so a person checks.`;
+      break;
+    case 'TRIGGER_CORROBORATION_DEGRADED':
+      trigger = `${mag} is over the bar, but only USGS confirms it, so a person checks.`;
+      break;
+    case 'TRIGGER_UNCORROBORATED':
+      trigger = `Not met: ${mag} is not confirmed by a second agency.`;
+      break;
+    case 'TRIGGER_THRESHOLD_NOT_MET':
+      trigger = `Not met: ${mag} is below the bar.`;
+      break;
+    default:
+      trigger = r8 ? plainRule(r8) : `${mag}.`;
+  }
+  const rows: SummaryRow[] = [{ key: 'trigger', label: 'Trigger', text: trigger }];
+  if (!v) return rows;
+
+  const payableIds = new Set(v.items.filter((i) => i.verdict !== 'BLOCK').map((i) => i.recipientId));
+  const inPlan = plan.recipients.filter((r) => payableIds.has(r.recipientId)).length;
+  rows.push({
+    key: 'plan',
+    label: 'In the plan',
+    text: `${inPlan} of ${plural(plan.recipients.length, 'enrolled household')}${inPlan ? `, ${usdShort(v.totalCents)}` : ''}.`,
+  });
+
+  const omitted = v.planRules.find((r) => r.reasonCode === 'ELIGIBLE_OMITTED' && r.status !== 'pass');
+  const byId = new Map(v.items.map((i) => [i.recipientId, i]));
+  const limit = event ? outerLimitKm(event.mag, bands) : bands.tierMaxDistanceKm.C;
+  const left = plan.recipients
+    .filter((r) => !payableIds.has(r.recipientId))
+    .map((r) => {
+      const item = byId.get(r.recipientId);
+      const d = item?.distanceKm ?? (event ? haversineKm(event.epicentre, r.home) : null);
+      const where = d != null ? `${r.town} (${Math.round(d)} km)` : r.town;
+      let why: string;
+      if (omitted?.detail.split(/[\s:,.]+/).includes(r.recipientId)) why = 'owed a payment, but the agent left it out';
+      else if (item?.verdict === 'BLOCK') {
+        const hit = item.ruleTrace?.find((x) => x.status === 'block' && x.scope === 'item');
+        why = hit ? lowerFirst(plainRule(hit).replace(/\.$/, '')) : 'blocked by the firewall';
+      } else if (d != null && d > limit) why = `beyond the ${Math.round(limit)} km payout limit`;
+      else why = 'not owed a payment for this earthquake';
+      return `${where}, ${why}`;
+    });
+  rows.push({ key: 'left', label: 'Left out', text: left.length ? `${plural(left.length, 'household')}: ${left.join('; ')}.` : 'Nobody.' });
+
+  const ex = exceptionItems(plan);
+  const names = [...new Set(ex.map((x) => x.town ?? x.recipientId))];
+  rows.push({
+    key: 'exceptions',
+    label: 'Exceptions',
+    text: ex.length ? `${plural(ex.length, 'household')} for a person to check: ${names.join(', ')}.` : 'None asked for.',
+  });
+  return rows;
+}
+
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** The plan table's note chip: "es, fixed note". The full text is in the rule drawer. */
+export function noteChip(item: Pick<ItemVerdict, 'amountCents'>, locale: string): string {
+  return `${noteLang(item, locale) ?? 'en'}, fixed note`;
 }
