@@ -29,5 +29,5 @@ export default defineConfig([
     files: ['*.config.{js,mjs,ts}'],
     rules: { 'import/no-anonymous-default-export': 'off' },
   },
-  globalIgnores(['.next/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts']),
+  globalIgnores(['.next/**', 'node_modules/**', 'coverage/**', 'next-env.d.ts', '.claude/**', 'video/**', 'data/**']),
 ]);
