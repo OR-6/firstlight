@@ -1,4 +1,5 @@
 import 'server-only';
+import { z } from 'zod';
 import { requestOrigin } from '../lib/origin';
 import { PayPalApiError } from '../paypal/client';
 import { PipelineError } from '../pipeline/pipeline';
@@ -41,6 +42,8 @@ const MESSAGE: Record<string, string> = {
 export function fail(err: unknown): Response {
   if (err instanceof ReplayEventNotFound) return json({ error: 'NOT_FOUND', message: 'No earthquake with that id.' }, 404);
   if (err instanceof RequestError) return json({ error: err.code, message: err.message }, err.status);
+  if (err instanceof BusyError) return json({ error: 'BUSY', message: err.message }, 429);
+  if (err instanceof NotConfiguredError) return json({ error: err.code, message: err.message }, 503);
   if (err instanceof SyntaxError) return json({ error: 'INVALID_JSON', message: 'Send a valid JSON body.' }, 400);
   if (err instanceof PipelineError) {
     return json({ error: err.code, message: MESSAGE[err.code] ?? err.message }, STATUS[err.code] ?? 400);
@@ -57,7 +60,7 @@ export function fail(err: unknown): Response {
 
 export class RequestError extends Error {
   constructor(
-    readonly code: 'REQUEST_TOO_LARGE' | 'INVALID_JSON' | 'NOT_FOUND',
+    readonly code: 'REQUEST_TOO_LARGE' | 'INVALID_JSON' | 'INVALID_REQUEST' | 'NOT_FOUND',
     message: string,
     readonly status: number,
   ) {
@@ -86,27 +89,87 @@ export async function readText(req: Request, maxBytes: number): Promise<string> 
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-export async function readJson<T>(req: Request, max = 10_000): Promise<T> {
+/** Parse the body as JSON (an empty body is `{}`). Malformed JSON is a 400. */
+async function readJson(req: Request, max: number): Promise<unknown> {
   const text = await readText(req, max);
   try {
-    return (text ? JSON.parse(text) : {}) as T;
+    return text ? JSON.parse(text) : {};
   } catch {
     throw new RequestError('INVALID_JSON', 'Send a valid JSON body.', 400);
   }
 }
 
-/**
- * Public base URL for links and redirects. Behind a proxy (Render) the
- * request's own URL is the internal address (http://localhost:10000), so
- * never build user-facing URLs from req.url alone.
- * Order: APP_BASE_URL, then the proxy's forwarded host, then Host, then req.url.
- */
-export function baseUrl(req: Request): string {
-  const configured = process.env.APP_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
-  if (configured) return configured.replace(/\/$/, '');
-  return requestOrigin(req.headers, req.url);
+/** One readable line from a zod error, e.g. "approver: Invalid input: expected string, received number". */
+function describeIssues(err: z.ZodError, where: string): string {
+  return err.issues
+    .slice(0, 3)
+    .map((i) => `${i.path.length ? i.path.join('.') : where}: ${i.message}`)
+    .join('; ');
 }
 
+/** Check untrusted input against a schema; a mismatch is a 422 that says what was wrong. */
+export function validate<S extends z.ZodType>(schema: S, value: unknown, where = 'body'): z.output<S> {
+  const r = schema.safeParse(value);
+  if (!r.success) throw new RequestError('INVALID_REQUEST', describeIssues(r.error, where), 422);
+  return r.data;
+}
+
+/** Read, parse and validate a JSON body: 413 if too large, 400 if not JSON, 422 if the wrong shape. */
+export async function readBody<S extends z.ZodType>(req: Request, schema: S, max = 10_000): Promise<z.output<S>> {
+  return validate(schema, await readJson(req, max));
+}
+
+/** Query-string parameters as a plain object, for validate(). Repeated keys keep the last value. */
+export function queryOf(req: Request): Record<string, string> {
+  return Object.fromEntries(new URL(req.url).searchParams);
+}
+
+/** A database row id in a path segment: a positive whole number. */
+export const RowId = z
+  .string()
+  .regex(/^[1-9][0-9]{0,14}$/, 'must be a positive whole number')
+  .transform(Number);
+
+/** The `[id]` segment of /api/plans/[id]/..., validated. */
+export async function planIdParam(ctx: { params: Promise<{ id: string }> }): Promise<number> {
+  return validate(RowId, (await ctx.params).id, 'plan id');
+}
+
+/** A 64-character lowercase hex hash (audit entries). */
+export const HexHash = z.string().regex(/^[0-9a-f]{64}$/, 'must be a 64-character lowercase hex hash');
+
+/**
+ * Public base URL for links and redirects; the one place this is decided.
+ * Behind a proxy (Render) the request's own URL is the internal address
+ * (http://localhost:10000), so never build user-facing URLs from req.url alone.
+ * Order: APP_BASE_URL, then RENDER_EXTERNAL_URL (Render injects it), then the
+ * request's forwarded host / Host / URL, then http://localhost:3000 when there
+ * is no request to go on (background work such as donation return links).
+ */
+export function baseUrl(req?: Request): string {
+  const configured = process.env.APP_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  return req ? requestOrigin(req.headers, req.url) : 'http://localhost:3000';
+}
+
+/** Another request already holds the lock this one needs (see runtime.exclusive). */
+export class BusyError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'BusyError';
+  }
+}
+
+/** A payout needs configuration this server doesn't have (zero-key / replay-only setups). */
+export class NotConfiguredError extends Error {
+  constructor(
+    readonly code: 'PAYPAL_NOT_CONFIGURED' | 'PAYEES_NOT_CONFIGURED',
+    message: string,
+  ) {
+    super(message);
+    this.name = 'NotConfiguredError';
+  }
+}
 
 export function donationFail(err: unknown): Response {
   if (err instanceof SyntaxError) return json({ error: 'INVALID_JSON', message: 'Send a JSON body.' }, 400);

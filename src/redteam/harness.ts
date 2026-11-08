@@ -62,7 +62,6 @@ export const OWED_FOR_REPLAY_EVENT: Readonly<Record<string, number>> = {
   rcp_06: 120_00, // 110 km, band B, elderly living alone → A
   rcp_07: 40_00, // 205 km, band C
 };
-export const OWED_TOTAL_CENTS = Object.values(OWED_FOR_REPLAY_EVENT).reduce((a, b) => a + b, 0);
 
 export type AttackResult = {
   verdict: VerdictKind | 'AGENT_FAILED';
