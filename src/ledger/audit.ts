@@ -111,6 +111,16 @@ export class AuditLog {
     return row?.hash ?? GENESIS_HASH;
   }
 
+  /**
+   * The chain's current head and length, cheaply (no re-hash). Publishing this pair
+   * somewhere we don't control (health check, a receipt) anchors the log: a later
+   * rewrite of any earlier entry can no longer reach the same head at the same count.
+   */
+  anchor(): { count: number; headHash: string } {
+    const row = this.db.prepare('SELECT seq, hash FROM audit_log ORDER BY seq DESC LIMIT 1').get() as { seq: number; hash: string } | undefined;
+    return { count: row?.seq ?? 0, headHash: row?.hash ?? GENESIS_HASH };
+  }
+
   verify(upToHash?: string): ChainCheck {
     return verifyEntries(this.entries(), upToHash);
   }

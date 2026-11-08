@@ -25,7 +25,72 @@ export const ITEM_STATUSES = [
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 /** Statuses whose money is back in (or never left) the pool. */
-const RETURNS_TO_POOL: readonly ItemStatus[] = ['BLOCKED', 'FAILED', 'RETURNED', 'REFUNDED', 'REVERSED', 'DENIED', 'CANCELED'];
+export const RETURNS_TO_POOL: readonly ItemStatus[] = ['BLOCKED', 'FAILED', 'RETURNED', 'REFUNDED', 'REVERSED', 'DENIED', 'CANCELED'];
+
+/** Which status an item may move to from each stored status (besides staying where it is). */
+export type ItemTransitionTable = Readonly<Record<ItemStatus, readonly ItemStatus[]>>;
+
+const IN_FLIGHT_NEXT: readonly ItemStatus[] = ITEM_STATUSES.filter((s) => s !== 'RESERVED');
+
+/**
+ * Payout item status only moves forward (D9x). PayPal answers every poll and webhook
+ * with the item's status as it is then; a late or cached answer can be older than what
+ * we already stored, so a reported status is applied only along these edges and any
+ * other move is refused (the caller audits it as a regression).
+ *
+ *  - RESERVED (ours, before PayPal answered) can become anything PayPal reports.
+ *  - PENDING and ONHOLD are in flight: they can become any PayPal status.
+ *  - UNCLAIMED waits up to 30 days for the recipient: claimed (SUCCESS), returned or
+ *    cancelled (RETURNED, CANCELED), held for review, blocked or failed. Never PENDING again.
+ *  - SUCCESS can only be taken back afterwards: REFUNDED or REVERSED. Anything earlier
+ *    (PENDING, ONHOLD, UNCLAIMED) is a stale answer.
+ *  - REFUNDED and REVERSED are final: SUCCESS after them is the stale answer from before.
+ *  - FAILED, RETURNED, BLOCKED, DENIED and CANCELED are final except for SUCCESS. SUCCESS
+ *    never comes before them in PayPal's lifecycle, so it can't be a stale answer: it
+ *    means PayPal now says the money reached the recipient. We believe it, because the
+ *    other mistake is worse: an item shown as failed while paid invites a retry (D6) and
+ *    leaves the pool counting money that is gone. CANCELED may also settle as RETURNED.
+ *
+ * Money follows the stored status: an item whose status is in RETURNS_TO_POOL has its
+ * amount back in the pool exactly once, any other status has it out. So a move from a
+ * pool-crediting status to SUCCESS books the matching debit (`setItemStatus`).
+ */
+export const ITEM_TRANSITIONS: ItemTransitionTable = {
+  RESERVED: IN_FLIGHT_NEXT,
+  PENDING: IN_FLIGHT_NEXT,
+  ONHOLD: IN_FLIGHT_NEXT,
+  UNCLAIMED: ['SUCCESS', 'RETURNED', 'CANCELED', 'ONHOLD', 'BLOCKED', 'FAILED'],
+  SUCCESS: ['REFUNDED', 'REVERSED'],
+  REFUNDED: [],
+  REVERSED: [],
+  FAILED: ['SUCCESS'],
+  RETURNED: ['SUCCESS'],
+  BLOCKED: ['SUCCESS'],
+  DENIED: ['SUCCESS'],
+  CANCELED: ['RETURNED', 'SUCCESS'],
+};
+
+/** True if an item stored as `from` may be recorded as `to` (staying put is always allowed). */
+export function itemTransitionAllowed(from: ItemStatus, to: ItemStatus): boolean {
+  return from === to || ITEM_TRANSITIONS[from].includes(to);
+}
+
+/** What `setItemStatus` did with a reported status. */
+export type ItemStatusUpdate = {
+  /** The item's stored status after the call (unchanged when the report was refused). */
+  status: ItemStatus;
+  /** What PayPal reported, normalised. */
+  reported: ItemStatus;
+  /** PayPal sent a status we don't know (treated as PENDING). */
+  unknown: boolean;
+  /** Stored status before the call. */
+  from: ItemStatus;
+  /** False when the report would have moved the item backwards and was ignored. */
+  applied: boolean;
+  /** Pool cents booked by this call: +amount when the money came back, -amount when it left again, else 0. */
+  bookedCents: number;
+  balanceAfterCents: number;
+};
 
 /**
  * Map a PayPal `transaction_status` defensively (SPEC §5.5): unknown values
@@ -168,23 +233,60 @@ export class Ledger {
     return tx.immediate();
   }
 
-  /** Record a status update for one item; money that comes back is re-credited exactly once. */
-  setItemStatus(eventId: string, recipientId: string, rawStatus: unknown): { status: ItemStatus; unknown: boolean } {
+  /**
+   * Record PayPal's status for one item, forward only (see ITEM_TRANSITIONS): a report
+   * that would move the item backwards changes nothing and comes back with
+   * `applied: false`. Money follows the stored status: an item in RETURNS_TO_POOL is
+   * re-credited exactly once (`payout_reversal`); a move out of such a status (PayPal
+   * now says SUCCESS) debits the same amount again (`payout_debit`, ref `item:…`), even
+   * below zero, since PayPal has already paid it out (the caller flags POOL_NEGATIVE).
+   */
+  setItemStatus(eventId: string, recipientId: string, rawStatus: unknown): ItemStatusUpdate {
     const norm = normaliseItemStatus(rawStatus);
-    const tx = this.db.transaction(() => {
+    const tx = this.db.transaction((): ItemStatusUpdate => {
       const row = this.db
-        .prepare('SELECT amount_cents FROM payout_items WHERE event_id = ? AND recipient_id = ?')
-        .get(eventId, recipientId) as { amount_cents: number } | undefined;
+        .prepare('SELECT amount_cents, status FROM payout_items WHERE event_id = ? AND recipient_id = ?')
+        .get(eventId, recipientId) as { amount_cents: number; status: string } | undefined;
       if (!row) throw new Error(`no payout item for ${eventId}/${recipientId}`);
-      this.db.prepare('UPDATE payout_items SET status = ? WHERE event_id = ? AND recipient_id = ?').run(norm.status, eventId, recipientId);
-      if (RETURNS_TO_POOL.includes(norm.status)) {
-        this.db
-          .prepare("INSERT OR IGNORE INTO ledger_entries (kind, amount_cents, ref, created_ms) VALUES ('payout_reversal', ?, ?, ?)")
-          .run(row.amount_cents, `item:${eventId}:${recipientId}`, this.clock());
+      const from = normaliseItemStatus(row.status).status;
+      const base = { reported: norm.status, unknown: norm.unknown, from };
+      if (!itemTransitionAllowed(from, norm.status)) {
+        return { ...base, status: from, applied: false, bookedCents: 0, balanceAfterCents: this.poolBalanceCents() };
       }
+      if (from !== norm.status) this.db.prepare('UPDATE payout_items SET status = ? WHERE event_id = ? AND recipient_id = ?').run(norm.status, eventId, recipientId);
+      const bookedCents = this.settleItemMoney(eventId, recipientId, row.amount_cents, RETURNS_TO_POOL.includes(norm.status));
+      return { ...base, status: norm.status, applied: true, bookedCents, balanceAfterCents: this.poolBalanceCents() };
     });
-    tx.immediate();
-    return norm;
+    return tx.immediate();
+  }
+
+  /** Cents of one item's payout currently back in the pool: its amount, or 0. */
+  itemCreditedCents(eventId: string, recipientId: string): number {
+    const ref = `item:${eventId}:${recipientId}`;
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS c FROM ledger_entries
+         WHERE kind IN ('payout_reversal', 'payout_debit') AND (ref = ? OR substr(ref, 1, ?) = ?)`,
+      )
+      .get(ref, ref.length + 1, `${ref}:`) as { c: number };
+    return row.c;
+  }
+
+  /**
+   * Make the ledger agree with where the item's money is. Credits are `payout_reversal`,
+   * re-debits `payout_debit`, both with ref `item:<event>:<recipient>` the first time and
+   * `…:<n>` after, so each move is booked once and the history stays readable.
+   */
+  private settleItemMoney(eventId: string, recipientId: string, amountCents: number, inPool: boolean): number {
+    const delta = (inPool ? amountCents : 0) - this.itemCreditedCents(eventId, recipientId);
+    if (delta === 0) return 0;
+    const kind = delta > 0 ? 'payout_reversal' : 'payout_debit';
+    const ref = `item:${eventId}:${recipientId}`;
+    const { n } = this.db
+      .prepare('SELECT COUNT(*) AS n FROM ledger_entries WHERE kind = ? AND (ref = ? OR substr(ref, 1, ?) = ?)')
+      .get(kind, ref, ref.length + 1, `${ref}:`) as { n: number };
+    this.db.prepare('INSERT INTO ledger_entries (kind, amount_cents, ref, created_ms) VALUES (?, ?, ?, ?)').run(kind, delta, n === 0 ? ref : `${ref}:${n + 1}`, this.clock());
+    return delta;
   }
 
   /**
