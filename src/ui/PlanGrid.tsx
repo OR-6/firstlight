@@ -1,14 +1,45 @@
 'use client';
 
-import { AllCommunityModule, ModuleRegistry, themeQuartz, type ColDef, type RowClickedEvent } from 'ag-grid-community';
+import {
+  CellStyleModule,
+  ClientSideRowModelModule,
+  ColumnAutoSizeModule,
+  CsvExportModule,
+  ModuleRegistry,
+  PinnedRowModule,
+  RowAutoHeightModule,
+  RowStyleModule,
+  TooltipModule,
+  ValidationModule,
+  themeQuartz,
+  type ColDef,
+  type ICellRendererParams,
+  type RowClickedEvent,
+} from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useMemo } from 'react';
 import type { ItemVerdict } from '@/firewall/types';
 import type { PlanView } from '@/server/views';
 import { StatusChip, itemStatus, usd } from './format';
-import { flagText, noteLang } from './plain';
+import { flagText, noteChip } from './plain';
 
-ModuleRegistry.registerModules([AllCommunityModule]);
+/**
+ * Only the AG Grid features the plan and payouts grids use: client-side rows,
+ * wrapped auto-height cells, cell and row styles, the pinned total row,
+ * tooltips, and CSV export (Payouts). ValidationModule names a missing module in
+ * development and is left out of production builds.
+ */
+ModuleRegistry.registerModules([
+  ClientSideRowModelModule,
+  RowAutoHeightModule,
+  CellStyleModule,
+  RowStyleModule,
+  PinnedRowModule,
+  ColumnAutoSizeModule,
+  TooltipModule,
+  CsvExportModule,
+  ...(process.env.NODE_ENV === 'production' ? [] : [ValidationModule]),
+]);
 
 /** AG Grid themed to the console tokens. */
 export const gridTheme = themeQuartz.withParams({
@@ -41,36 +72,67 @@ export function planRows(plan: PlanView): PlanRow[] {
   });
 }
 
+/** The pinned total row: payable households and what the firewall allowed in total. */
+function totalRow(rows: PlanRow[]): PlanRow {
+  const payable = rows.filter((r) => r.verdict !== 'BLOCK');
+  return {
+    index: -1,
+    recipientId: 'Total',
+    town: `${payable.length} ${payable.length === 1 ? 'household' : 'households'}`,
+    locale: '',
+    flags: [],
+    amountCents: payable.reduce((t, r) => t + r.amountCents, 0),
+    distanceKm: null,
+  } as unknown as PlanRow;
+}
+
+const isTotal = (p: { node?: { rowPinned?: string | null } | null }) => Boolean(p.node?.rowPinned);
+
+/** The language of the note PayPal sends, as a small chip; the full text is in the rule drawer. */
+function NoteChip({ row }: { row: PlanRow }) {
+  return (
+    <span className="inline-flex items-center rounded-[var(--radius-chip)] border border-line-soft px-1.5 text-[0.8rem] leading-[1.5] text-ink-muted">
+      {noteChip(row, row.locale)}
+    </span>
+  );
+}
+
 export function PlanGrid({ plan, onOpen }: { plan: PlanView; onOpen: (row: PlanRow) => void }) {
   const rows = useMemo(() => planRows(plan), [plan]);
+  const pinned = useMemo(() => (rows.length ? [totalRow(rows)] : []), [rows]);
   const cols = useMemo<ColDef<PlanRow>[]>(
     () => [
       {
         field: 'recipientId',
         headerName: 'Recipient',
-        minWidth: 150,
-        cellRenderer: (p: { data: PlanRow }) => (
-          <span>
-            <span className="font-semibold">{p.data.recipientId}</span> <span className="text-ink-muted">{p.data.town}</span>
-          </span>
-        ),
+        flex: 1.2,
+        minWidth: 190,
+        cellRenderer: (p: ICellRendererParams<PlanRow>) =>
+          p.data ? (
+            <span>
+              <span className={isTotal(p) ? 'font-[800]' : 'font-semibold'}>{p.data.recipientId}</span> <span className="text-ink-muted">{p.data.town}</span>
+            </span>
+          ) : null,
       },
       {
         field: 'distanceKm',
         headerName: 'Distance',
-        width: 110,
+        width: 120,
+        sortable: true,
         type: 'rightAligned',
         cellClass: 'num',
         valueFormatter: (p) => (p.value == null ? '' : `${Math.round(p.value)} km`),
       },
       {
         headerName: 'Tier',
-        width: 190,
+        flex: 1,
+        minWidth: 200,
         wrapText: true,
         autoHeight: true,
         cellClass: 'fl-wrap',
         valueGetter: (p) => p.data?.allowedTier ?? 'none',
-        cellRenderer: (p: { data: PlanRow }) => {
+        cellRenderer: (p: ICellRendererParams<PlanRow>) => {
+          if (!p.data || isTotal(p)) return null;
           const changed = p.data.allowedTier !== p.data.requestedTier;
           return (
             <span>
@@ -84,35 +146,28 @@ export function PlanGrid({ plan, onOpen }: { plan: PlanView; onOpen: (row: PlanR
       {
         field: 'amountCents',
         headerName: 'Amount',
-        width: 115,
+        width: 130,
+        sortable: true,
         type: 'rightAligned',
-        cellClass: 'num font-semibold',
+        cellClass: (p) => (isTotal(p) ? 'num font-[800]' : 'num font-semibold'),
         valueFormatter: (p) => (p.value ? usd(p.value) : '$0.00'),
       },
       {
         field: 'verdict',
         headerName: 'Status',
-        width: 150,
-        cellRenderer: (p: { data: PlanRow }) => {
+        width: 160,
+        cellRenderer: (p: ICellRendererParams<PlanRow>) => {
+          if (!p.data || isTotal(p)) return null;
           const st = itemStatus(plan, p.data.recipientId, p.data.verdict);
           return <StatusChip label={st.label} tone={st.tone} />;
         },
       },
       {
         field: 'note',
-        headerName: 'Note to recipient',
-        flex: 1,
-        minWidth: 260,
-        // Wrap long notes onto more lines instead of running off the right edge.
-        wrapText: true,
-        autoHeight: true,
-        cellClass: 'fl-wrap',
-        cellRenderer: (p: { data: PlanRow }) => (
-          <span>
-            <span className="mr-2 rounded-[var(--radius-chip)] border border-line-soft px-1 text-[0.75rem] text-ink-muted">{p.data.locale}</span>
-            <span lang={noteLang(p.data, p.data.locale)}>{p.data.note}</span>
-          </span>
-        ),
+        headerName: 'Note',
+        width: 150,
+        tooltip: (p) => (p.data && !isTotal(p) ? p.data.note : undefined),
+        cellRenderer: (p: ICellRendererParams<PlanRow>) => (p.data && !isTotal(p) ? <NoteChip row={p.data} /> : null),
       },
     ],
     [plan],
@@ -122,21 +177,23 @@ export function PlanGrid({ plan, onOpen }: { plan: PlanView; onOpen: (row: PlanR
     <div>
       <RecipientCards plan={plan} rows={rows} onOpen={onOpen} />
       <div className="hidden md:block">
-      <AgGridReact<PlanRow>
-        theme={gridTheme}
-        domLayout="autoHeight"
-        rowData={rows}
-        columnDefs={cols}
-        getRowId={(p) => `${p.data.index}`}
-        onRowClicked={(e: RowClickedEvent<PlanRow>) => e.data && onOpen(e.data)}
-        rowStyle={{ cursor: 'pointer' }}
-        suppressCellFocus={false}
-        onCellKeyDown={(e) => {
-          const ev = e.event as KeyboardEvent | undefined;
-          if (ev?.key === 'Enter' && e.data) onOpen(e.data);
-        }}
-        overlayNoRowsTemplate="<span>No recipients in this plan.</span>"
-      />
+        <AgGridReact<PlanRow>
+          theme={gridTheme}
+          domLayout="autoHeight"
+          rowData={rows}
+          pinnedBottomRowData={pinned}
+          columnDefs={cols}
+          defaultColDef={{ sortable: false }}
+          getRowId={(p) => `${p.data.index}`}
+          onRowClicked={(e: RowClickedEvent<PlanRow>) => e.data && !e.node.rowPinned && onOpen(e.data)}
+          getRowStyle={(p) => (p.node.rowPinned ? { cursor: 'default' } : { cursor: 'pointer' })}
+          suppressCellFocus={false}
+          onCellKeyDown={(e) => {
+            const ev = e.event as KeyboardEvent | undefined;
+            if (ev?.key === 'Enter' && e.data && !e.node.rowPinned) onOpen(e.data);
+          }}
+          overlayNoRowsTemplate="<span>No recipients in this plan.</span>"
+        />
       </div>
     </div>
   );
@@ -192,13 +249,9 @@ function RecipientCards({ plan, rows, onOpen }: { plan: PlanView; rows: PlanRow[
               <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <TierPlate row={r} />
                 <StatusChip label={st.label} tone={st.tone} />
+                {r.note ? <NoteChip row={r} /> : null}
               </span>
               {r.flags.length ? <span className="mt-1 block text-[0.85rem] text-ink-muted">{sentenceCase(flagText(r.flags))}</span> : null}
-              {r.note ? (
-                <span className="mt-2 block text-[0.88rem] leading-snug text-ink-muted" lang={noteLang(r, r.locale)}>
-                  {r.note}
-                </span>
-              ) : null}
             </button>
           </li>
         );

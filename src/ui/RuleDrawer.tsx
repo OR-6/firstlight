@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { defaultFirewallConfig } from '@/firewall/config';
+import { payoutNoteFor } from '@/firewall/notes';
 import type { RuleId } from '@/firewall/types';
 import { Notice, StatusMark, VerdictChip, usd } from './format';
 import type { PlanRow } from './PlanGrid';
@@ -47,6 +49,9 @@ export function RuleDrawer({ row, stale = null, onClose }: { row: PlanRow | null
 
   if (!row) return null;
   const reasons = verdictReasons(row);
+  const lang = noteLang(row, row.locale);
+  // A note in another language is shown with its English version, for reviewers who don't read it.
+  const english = lang && lang !== 'en' && row.amountCents > 0 ? payoutNoteFor('en', row.amountCents, defaultFirewallConfig()) : null;
   return (
     <div className="fixed inset-0 z-[2000] flex justify-end" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
       <button className="absolute inset-0 bg-black/35" aria-label="Close" onClick={onClose} tabIndex={-1} />
@@ -98,7 +103,7 @@ export function RuleDrawer({ row, stale = null, onClose }: { row: PlanRow | null
                 </span>
                 <div className="min-w-0">
                   <p className="text-[0.93rem] font-semibold">
-                    <span className="num mr-1.5 font-normal text-ink-dim" title={`${r.reasonCode}: ${r.detail}`}>
+                    <span className="num mr-1.5 text-ink-muted" title={`${r.reasonCode}: ${r.detail}`}>
                       {r.id}
                     </span>
                     {ruleTitle(r)}
@@ -112,10 +117,17 @@ export function RuleDrawer({ row, stale = null, onClose }: { row: PlanRow | null
             ))}
           </ol>
           <h3 className="mb-1 mt-6 text-[0.95rem] font-bold">Message PayPal sends</h3>
-          <p className="rounded-[var(--radius-control)] border border-line-soft bg-ground px-3 py-2 text-[0.95rem]" lang={noteLang(row, row.locale)}>
+          <p className="rounded-[var(--radius-control)] border border-line-soft bg-ground px-3 py-2 text-[0.95rem]" lang={lang}>
             {row.note}
           </p>
-          <p className="mt-1 text-[0.82rem] text-ink-dim">A fixed note in the household&apos;s language. The agent can&apos;t change it.</p>
+          {english ? (
+            <p className="mt-1.5 text-[0.88rem] text-ink-muted">
+              <span className="font-semibold">In English:</span> <span lang="en">{english}</span>
+            </p>
+          ) : null}
+          <p className="mt-1.5 text-[0.82rem] text-ink-dim">
+            A fixed note in the household&apos;s language, naming the field partner and its help line. Every household gets the same one; the agent can&apos;t change it.
+          </p>
           {row.agentNote ? (
             <>
               <h3 className="mb-1 mt-4 text-[0.95rem] font-bold">The agent&apos;s draft (shown to you, never sent)</h3>

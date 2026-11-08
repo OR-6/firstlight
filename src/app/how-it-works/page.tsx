@@ -25,8 +25,8 @@ const ROLES: { who: string; uses: string; can: string }[] = [
   },
   {
     who: 'People affected by the earthquake',
-    uses: 'Their own PayPal account, nothing here',
-    can: 'Receive the money in their own PayPal or Venmo account, with a message in their language. They never apply after the disaster and never see this console.',
+    uses: 'Their own account, nothing here',
+    can: "Receive the money in their own PayPal account (Venmo in the US), or through a licensed partner's rail where they have neither, with a message in their language. They never apply after the disaster and never see this console.",
   },
   {
     who: 'Donors',
@@ -104,7 +104,7 @@ export default function HowItWorks() {
           <h2 id="who" className="text-[1.15rem] font-bold">
             Who uses what
           </h2>
-          <div className="panel mt-3 overflow-x-auto">
+          <div className="panel mt-3 overflow-x-auto" tabIndex={0} role="region" aria-label="Who uses what">
             <table className="w-full min-w-[640px] text-left text-[0.93rem]">
               <thead className="text-[0.85rem] text-ink-muted">
                 <tr className="border-b border-line-soft">
@@ -152,7 +152,7 @@ export default function HowItWorks() {
             Who can actually receive the money
           </h2>
           <p>
-            Many rural households hit hardest by an earthquake don&apos;t have a PayPal account. PayPal Payouts reaches PayPal and Venmo accounts only. For households without one, a real deployment would put a licensed partner&apos;s or a
+            Many rural households hit hardest by an earthquake don&apos;t have a PayPal account. PayPal Payouts reaches PayPal accounts, and Venmo accounts in the US only. For households without one, a real deployment would put a licensed partner&apos;s or a
             mobile-wallet provider&apos;s rail behind the same firewall, so the same checks decide who is paid and how much. Turning that money into cash nearby, and checking afterwards that people got it, is the field partner&apos;s job.
           </p>
           <p>
@@ -252,6 +252,40 @@ export default function HowItWorks() {
             early-action protocol, signed off before the season, not chosen by the agent on the day. The approval step is the designated person&apos;s decision: when the firewall flags a plan, that person approves or denies it, and can
             never raise an amount.
           </p>
+        </section>
+
+        <section aria-labelledby="pilot" className={`${PROSE} space-y-3`}>
+          <h2 id="pilot" className="text-[1.15rem] font-bold">
+            Path to a pilot
+          </h2>
+          <dl className="space-y-3">
+            <div>
+              <dt className="font-semibold">Who signs</dt>
+              <dd className="text-ink-muted">
+                The cash programme that runs the response, such as a national Red Cross or Red Crescent society or a government social-protection agency, signs the early-action protocol before the season. Firstlight runs what it
+                signed; it doesn&apos;t set policy.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">What the programme configures</dt>
+              <dd className="text-ink-muted">
+                Tier amounts from the local minimum expenditure basket, the distance bands and trigger, per-household and per-event limits, the approval threshold, and the field partner and help line named in the payment note.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">What Firstlight replaces</dt>
+              <dd className="text-ink-muted">
+                Today, after a quake, staff register affected households by hand, build a spreadsheet of who gets what, and upload it as a bulk transfer. Firstlight starts from households enrolled beforehand and replaces the spreadsheet and
+                the bulk upload with a checked plan, one approval and one payout batch.
+              </dd>
+            </div>
+            <div>
+              <dt className="font-semibold">How a pilot is measured</dt>
+              <dd className="text-ink-muted">
+                Time from the trigger to the first dollar in a household&apos;s account. Alongside it: the share of eligible households paid in full, and money that reached anyone not owed, which must stay at zero.
+              </dd>
+            </div>
+          </dl>
         </section>
 
         <section aria-labelledby="safe" className={`${PROSE} space-y-3`}>

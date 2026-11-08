@@ -211,6 +211,8 @@ function firedText(f: Pick<RuleResult, 'reasonCode' | 'detail'>): string {
   return `${t.slice(0, 180).replace(/\s+\S*$/, '')}…`;
 }
 
+const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 function Suite({ s }: { s: SuiteReport }) {
   const clean = s.firewall.payloadsWithUnauthorisedPayout === 0;
   const h = s.heldout;
@@ -248,7 +250,22 @@ function Suite({ s }: { s: SuiteReport }) {
           </p>
         </div>
       </div>
-      <div className="overflow-x-auto">
+      {/* Phones: one card per attack, the firewall's outcome first. */}
+      <ul className="divide-y divide-line-soft border-y border-line-soft md:hidden" aria-label="Each attack">
+        {s.results.map((r) => (
+          <li key={r.id} className="py-2.5 text-[0.88rem]">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <VerdictChip v={r.verdict} />
+              <span className={`num font-semibold ${r.unauthorisedCents > 0 ? 'text-block-ink' : 'text-allow'}`}>{usd(r.unauthorisedCents)} to anyone not owed</span>
+            </div>
+            <p className="mt-1 font-semibold leading-snug">{r.title}</p>
+            <p className="text-ink-muted">
+              {sentenceCase(r.category.replace('_', ' '))}. Patterns: {r.sentinel.regex ? 'flagged' : 'missed'}. Classifier model: {r.sentinel.llm === null ? 'not measured' : r.sentinel.llm ? 'flagged' : 'missed'}.
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="hidden overflow-x-auto md:block" tabIndex={0} role="region" aria-label="Results for each attack">
         <table className="w-full min-w-[680px] text-[0.88rem]">
           <thead className="text-ink-muted">
             <tr className="border-b border-line-soft text-left">
@@ -270,7 +287,7 @@ function Suite({ s }: { s: SuiteReport }) {
                 <td className="py-1.5 pr-3">
                   <VerdictChip v={r.verdict} />
                 </td>
-                <td className="num py-1.5 text-right font-semibold text-allow">{usd(r.unauthorisedCents)}</td>
+                <td className={`num py-1.5 text-right font-semibold ${r.unauthorisedCents > 0 ? 'text-block-ink' : 'text-allow'}`}>{usd(r.unauthorisedCents)}</td>
               </tr>
             ))}
           </tbody>
@@ -296,7 +313,25 @@ function Residual({ rows }: { rows: SuiteReport['residual'] }) {
       <p className="max-w-[78ch] text-[0.88rem] text-ink-muted">
         Same hijacked agent, same careless reviewer who approves everything. &ldquo;Needs a person&rdquo; means the plan is held and the reason named; a careless person can still approve it, and the shortfall column shows what households would then lose.
       </p>
-      <div className="mt-2 overflow-x-auto">
+      {/* Phones: one card per attack, the outcome first. */}
+      <ul className="mt-2 divide-y divide-line-soft border-y border-line-soft md:hidden" aria-label="Attacks that don't try to pay a stranger">
+        {rows.map((r) => (
+          <li key={r.id} className="py-2.5 text-[0.88rem]">
+            <p className={`font-semibold ${OUTCOME[r.outcome].className}`}>{OUTCOME[r.outcome].label}</p>
+            <p className="mt-0.5 font-semibold leading-snug">{r.title}</p>
+            <p className="text-ink-muted">{r.attempted}</p>
+            <p className="mt-1">
+              <span className="text-ink-muted">What stops it: </span>
+              {r.defence}
+            </p>
+            <p className="num mt-1 text-ink-muted">
+              Shortfall {r.shortfallCents === null ? 'n/a' : usd(r.shortfallCents)}. To anyone not owed{' '}
+              <span className={`font-semibold ${r.unauthorisedCents > 0 ? 'text-block-ink' : 'text-allow'}`}>{usd(r.unauthorisedCents)}</span>.
+            </p>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 hidden overflow-x-auto md:block" tabIndex={0} role="region" aria-label="Attacks that don't try to pay a stranger, results">
         <table className="w-full min-w-[720px] text-[0.88rem]">
           <thead className="text-ink-muted">
             <tr className="border-b border-line-soft text-left">
