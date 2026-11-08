@@ -191,7 +191,14 @@ export function batchesView() {
     status: b.status,
     createdMs: b.created_ms,
     polling: rt.pollers.has(b.id),
-    items: rt.pipeline.ledger.batchItems(b.id).map((i) => ({ recipientId: i.recipient_id, town: towns.get(i.recipient_id) ?? '', amountCents: i.amount_cents, status: i.status })),
+    items: rt.pipeline.ledger.batchItems(b.id).map((i) => ({
+      recipientId: i.recipient_id,
+      town: towns.get(i.recipient_id) ?? '',
+      amountCents: i.amount_cents,
+      status: i.status,
+      transactionId: i.transaction_id,
+      errorName: i.error_name,
+    })),
   }));
 }
 

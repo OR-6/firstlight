@@ -21,6 +21,7 @@ export function openDb(path = ':memory:'): Db {
 
 function migrate(db: Db): void {
   dropVerdictDigestUnique(db);
+  addPayoutItemDetailColumns(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id            TEXT PRIMARY KEY,
@@ -66,6 +67,9 @@ function migrate(db: Db): void {
       amount_cents  INTEGER NOT NULL CHECK (amount_cents > 0),
       status        TEXT NOT NULL,
       created_ms    INTEGER NOT NULL,
+      paypal_item_id TEXT,                  -- PayPal's payout_item_id
+      transaction_id TEXT,                  -- PayPal transaction id once paid
+      error_name    TEXT,                   -- PayPal's reason when an item fails (e.g. RECEIVER_UNREGISTERED)
       UNIQUE (event_id, recipient_id)       -- R6 again, enforced by the database
     );
 
@@ -164,4 +168,12 @@ function dropVerdictDigestUnique(db: Db): void {
       DROP TABLE verdicts_old;`);
   })();
   db.pragma('foreign_keys = ON');
+}
+
+/** PayPal's own ids and failure reason per payout item (D77). Added to existing databases in place. */
+function addPayoutItemDetailColumns(db: Db): void {
+  const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'payout_items'").get();
+  if (!exists) return; // created below with the columns
+  const cols = new Set((db.prepare('PRAGMA table_info(payout_items)').all() as { name: string }[]).map((c) => c.name));
+  for (const col of ['paypal_item_id', 'transaction_id', 'error_name']) if (!cols.has(col)) db.exec(`ALTER TABLE payout_items ADD COLUMN ${col} TEXT`);
 }

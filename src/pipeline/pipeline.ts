@@ -299,6 +299,7 @@ export class Pipeline {
       const [eventId, recipientId] = sid.split(':');
       if (eventId !== batch.event_id || !recipientId || !current.has(recipientId)) continue;
       const norm = this.ledger.setItemStatus(eventId, recipientId, it.transaction_status);
+      this.ledger.setItemDetails(eventId, recipientId, { paypalItemId: it.payout_item_id, transactionId: it.transaction_id, errorName: it.errors?.name ?? null });
       if (current.get(recipientId) !== norm.status) changes.push({ recipientId, from: current.get(recipientId)!, to: norm.status, unknown: norm.unknown });
     }
     const status = body.batch_header.batch_status;

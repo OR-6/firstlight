@@ -82,7 +82,14 @@ function Batch({ b }: { b: BatchView }) {
               return <StatusChip label={st.label} tone={st.tone} />;
             },
           },
-          { field: 'status', headerName: 'Raw status', width: 140, cellClass: 'text-ink-dim' },
+          {
+            headerName: 'PayPal transaction or reason',
+            flex: 1,
+            minWidth: 200,
+            cellClass: 'num',
+            valueGetter: (p) => (p.data?.errorName ? p.data.errorName.replaceAll('_', ' ').toLowerCase() : (p.data?.transactionId ?? '')),
+            cellClassRules: { 'text-block-ink': (p) => !!p.data?.errorName },
+          },
         ]}
       />
     </section>

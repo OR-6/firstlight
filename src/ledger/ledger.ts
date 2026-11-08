@@ -66,6 +66,16 @@ export type ReserveBatchInput = {
   items: { recipientId: string; amountCents: number }[];
 };
 
+export type BatchItemRow = {
+  event_id: string;
+  recipient_id: string;
+  amount_cents: number;
+  status: string;
+  paypal_item_id: string | null;
+  transaction_id: string | null;
+  error_name: string | null;
+};
+
 export class Ledger {
   constructor(
     private readonly db: Db,
@@ -156,10 +166,20 @@ export class Ledger {
     return this.db.prepare('SELECT * FROM payout_batches WHERE id = ?').get(id) as BatchRow | undefined;
   }
 
-  batchItems(batchId: number): { event_id: string; recipient_id: string; amount_cents: number; status: string }[] {
+  batchItems(batchId: number): BatchItemRow[] {
     return this.db
-      .prepare('SELECT event_id, recipient_id, amount_cents, status FROM payout_items WHERE batch_id = ? ORDER BY id')
-      .all(batchId) as { event_id: string; recipient_id: string; amount_cents: number; status: string }[];
+      .prepare('SELECT event_id, recipient_id, amount_cents, status, paypal_item_id, transaction_id, error_name FROM payout_items WHERE batch_id = ? ORDER BY id')
+      .all(batchId) as BatchItemRow[];
+  }
+
+  /** PayPal's ids and failure reason for an item, as last reported by PayPal. */
+  setItemDetails(eventId: string, recipientId: string, d: { paypalItemId?: string | null; transactionId?: string | null; errorName?: string | null }): void {
+    this.db
+      .prepare(
+        `UPDATE payout_items SET paypal_item_id = COALESCE(?, paypal_item_id), transaction_id = COALESCE(?, transaction_id), error_name = ?
+         WHERE event_id = ? AND recipient_id = ?`,
+      )
+      .run(d.paypalItemId ?? null, d.transactionId ?? null, d.errorName ?? null, eventId, recipientId);
   }
 
   setBatchStatus(id: number, status: string, paypalBatchId?: string): void {

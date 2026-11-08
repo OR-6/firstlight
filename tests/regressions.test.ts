@@ -126,3 +126,40 @@ describe('donations', () => {
     expect(Object.values(svc.rejected).reduce((a, b) => a + b, 0)).toBe(1);
   });
 });
+
+describe('payout item details from PayPal', () => {
+  it('stores the transaction id and the failure reason PayPal reports', async () => {
+    const { pipeline } = makePipeline({ llm: scriptedAgent(GOOD_PLAN) });
+    const db = dbOf(pipeline);
+    const { batchId } = pipeline.ledger.reservePayoutBatch({
+      eventId: 'us6000u18k',
+      planVersion: 1,
+      paypalRequestId: 'r2',
+      verdictDigest: 'd2',
+      items: [
+        { recipientId: 'rcp_01', amountCents: 120_00 },
+        { recipientId: 'rcp_02', amountCents: 120_00 },
+      ],
+    });
+    pipeline.ledger.setBatchStatus(batchId, 'PENDING', 'PB000002');
+    const impl: FetchLike = async (url) => {
+      const path = url.replace(PAYPAL_SANDBOX_BASE_URL, '');
+      const reply = (status: number, body: unknown) => ({ ok: status < 300, status, headers: { get: () => null }, text: async () => JSON.stringify(body) });
+      if (path === '/v1/oauth2/token') return reply(200, { access_token: 't', expires_in: 3600 });
+      return reply(200, {
+        batch_header: { payout_batch_id: 'PB000002', batch_status: 'SUCCESS' },
+        items: [
+          { payout_item_id: 'ITEM1', transaction_id: 'TX1', transaction_status: 'SUCCESS', payout_item: { sender_item_id: 'us6000u18k:rcp_01' } },
+          { payout_item_id: 'ITEM2', transaction_status: 'FAILED', errors: { name: 'RECEIVER_UNREGISTERED' }, payout_item: { sender_item_id: 'us6000u18k:rcp_02' } },
+        ],
+      });
+    };
+    await pipeline.poll(batchId, new PayPalClient({ baseUrl: PAYPAL_SANDBOX_BASE_URL, clientId: 'a', clientSecret: 'b' }, impl));
+    const rows = pipeline.ledger.batchItems(batchId);
+    expect(rows.map((r) => [r.recipient_id, r.status, r.transaction_id, r.error_name])).toEqual([
+      ['rcp_01', 'SUCCESS', 'TX1', null],
+      ['rcp_02', 'FAILED', null, 'RECEIVER_UNREGISTERED'],
+    ]);
+    expect(db).toBeTruthy();
+  });
+});
