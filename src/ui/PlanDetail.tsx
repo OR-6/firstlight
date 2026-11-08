@@ -17,12 +17,12 @@ export function PlanDetail({ plan, event }: { plan: PlanView; event: EventView |
   return (
     <div className="space-y-5">
       <MoneyPath stops={buildStops(event, plan)} />
-      <AgentPanel plan={plan} />
+      <AgentPanel plan={plan} event={event} />
       {v ? (
-        <section className="panel overflow-hidden" aria-label={`Recipients in plan ${plan.id}`}>
+        <section className="panel overflow-hidden" aria-labelledby="plan-title">
           <div className="space-y-4 border-b border-line-soft p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <PlanHeader plan={plan} />
+              <PlanHeader plan={plan} event={event} headingId="plan-title" />
               <p className="text-[0.85rem] text-ink-dim">Select a row to see every firewall check for that recipient.</p>
             </div>
             {plan.approval ? (

@@ -3,7 +3,8 @@
 import { useId, useState } from 'react';
 import type { EventView, PlanView } from '@/server/views';
 import { ApiError, call, useLive } from './live';
-import { Notice, PAGER, StatusChip, planStatus, usd, when } from './format';
+import { Notice, PAGER, StatusChip, StatusMark, planStatus, usd, when } from './format';
+import { plainRule, planSummary, planTitle } from './plain';
 
 export function EventPanel({ event }: { event: EventView }) {
   const corr = event.corroboration;
@@ -16,9 +17,9 @@ export function EventPanel({ event }: { event: EventView }) {
           <span className="ml-1 text-[1rem] font-semibold text-ink-muted">{event.magType}</span>
         </p>
         <div className="min-w-0">
-          <h1 id="event-title" className="text-[1.15rem] font-bold leading-snug">
+          <h2 id="event-title" className="text-[1.15rem] font-bold leading-snug">
             {event.place}
-          </h1>
+          </h2>
           <p className="num text-[0.88rem] text-ink-muted">
             {new Date(event.time).toUTCString().replace(' GMT', ' UTC')}, {event.depthKm} km deep
           </p>
@@ -64,8 +65,9 @@ function distance(e: EventView, p: { lat: number; lon: number }) {
   return 2 * 6371.0088 * Math.asin(Math.sqrt(a));
 }
 
-export function AgentPanel({ plan }: { plan: PlanView }) {
+export function AgentPanel({ plan, event = null }: { plan: PlanView; event?: EventView | null }) {
   const [open, setOpen] = useState(false);
+  const rationaleId = useId();
   const findings = plan.sentinel.findings;
   const recorded = plan.llmMode === 'replay';
   return (
@@ -81,15 +83,24 @@ export function AgentPanel({ plan }: { plan: PlanView }) {
           {plan.agent.model}, {plan.agent.turns} turns{recorded ? ', recorded run replayed' : plan.llmMode === 'record' ? ', live run (recorded)' : plan.llmMode === 'scripted' ? ', scripted' : ', live'}
         </span>
       </div>
+      <p className="mt-2 max-w-[72ch] text-[0.98rem] font-semibold leading-snug">{planSummary(plan, event)}</p>
       {plan.rationale ? (
-        <div className="mt-3 max-w-[72ch]">
-          <p className={`whitespace-pre-line text-[0.94rem] leading-relaxed text-ink ${open ? '' : 'line-clamp-6'}`}>{plan.rationale}</p>
-          <button className="mt-1 text-[0.85rem] text-allow hover:underline" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-            {open ? 'Show less' : 'Read the full rationale'}
+        <div className="mt-2 max-w-[72ch]">
+          <button
+            type="button"
+            className="text-[0.88rem] font-semibold text-allow underline-offset-2 hover:underline"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            aria-controls={rationaleId}
+          >
+            {open ? "Hide the agent's reasoning" : "Read the agent's reasoning"}
           </button>
+          <p id={rationaleId} hidden={!open} className="mt-2 whitespace-pre-line border-l-2 border-line-soft pl-3 text-[0.94rem] leading-relaxed text-ink-muted">
+            {plan.rationale}
+          </p>
         </div>
-      ) : (
-        <p className="mt-3 text-ink-muted">{plan.agent.reason}</p>
+      ) : plan.status === 'agent_failed' ? null : (
+        <p className="mt-2 text-ink-muted">{plan.agent.reason}</p>
       )}
       <div className="mt-4 border-t border-line-soft pt-3">
         {findings.length === 0 ? (
@@ -116,8 +127,27 @@ export function AgentPanel({ plan }: { plan: PlanView }) {
   );
 }
 
+/** Every non-passing check on a plan, in plain words, labelled with the household it is about. */
+function decisionReasons(plan: PlanView): { key: string; status: 'warn' | 'block'; who: string | null; text: string }[] {
+  const v = plan.verdict;
+  if (!v) return [];
+  const towns = new Map(plan.recipients.map((r) => [r.recipientId, r.town]));
+  const planHits = [...new Map(v.planRules.filter((r) => r.status !== 'pass').map((r) => [r.reasonCode, r])).values()];
+  const itemHits = v.items.flatMap((i) => i.ruleTrace.filter((r) => r.scope === 'item' && r.status !== 'pass').map((r) => ({ r, item: i })));
+  const others = planHits.length + itemHits.length > 1;
+  return [
+    ...planHits.map((r) => ({ key: r.reasonCode, status: r.status as 'warn' | 'block', who: null, text: plainRule(r, { omitWarningsSummary: others }) })),
+    ...itemHits.map(({ r, item }) => ({
+      key: `${item.index}-${r.reasonCode}`,
+      status: r.status as 'warn' | 'block',
+      who: towns.get(item.recipientId) ?? item.recipientId,
+      text: plainRule(r),
+    })),
+  ].filter((x) => x.text);
+}
+
 /** Approve or deny a plan. Same names on the buttons and in the result. */
-export function ApprovalForm({ plan, compact = false }: { plan: PlanView; compact?: boolean }) {
+export function ApprovalForm({ plan, event = null, compact = false }: { plan: PlanView; event?: EventView | null; compact?: boolean }) {
   const { bump } = useLive();
   const nameId = useId();
   const reasonId = useId();
@@ -125,10 +155,7 @@ export function ApprovalForm({ plan, compact = false }: { plan: PlanView; compac
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const warns = [...(plan.verdict?.planRules ?? []), ...(plan.verdict?.items.flatMap((i) => i.ruleTrace.filter((r) => r.scope === 'item')) ?? [])].filter(
-    (r) => r.status !== 'pass',
-  );
-  const reasons = [...new Map(warns.map((r) => [`${r.reasonCode}`, r])).values()];
+  const reasons = decisionReasons(plan);
 
   const decide = async (d: 'approve' | 'deny') => {
     setBusy(d);
@@ -147,23 +174,23 @@ export function ApprovalForm({ plan, compact = false }: { plan: PlanView; compac
     <div className={compact ? '' : 'panel p-5'}>
       {!compact ? (
         <>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-[1.1rem] font-bold">
-              Plan {plan.id} for {plan.eventId}
-            </h2>
-            <span className="num text-[1.2rem] font-[800]">{usd(plan.verdict?.totalCents ?? 0)}</span>
-          </div>
+          <h2 className="text-[1.1rem] font-bold leading-snug">{planTitle(plan, event)}</h2>
           <p className="mt-1 text-[0.9rem] text-ink-muted">
-            {plan.verdict?.items.filter((i) => i.verdict !== 'BLOCK').length ?? 0} payable recipients. Created {when(plan.createdMs)}.
+            Plan {plan.id}, version {plan.version}. Created {when(plan.createdMs)}.
           </p>
         </>
       ) : null}
       <h3 className={`${compact ? '' : 'mt-4'} text-[0.95rem] font-semibold`}>Why a person has to decide</h3>
-      <ul className="mt-1.5 space-y-1 text-[0.88rem]">
+      <ul className="mt-1.5 space-y-1.5 text-[0.92rem]">
         {reasons.map((r) => (
-          <li key={r.reasonCode} className="flex gap-2">
-            <span className={r.status === 'block' ? 'text-block' : 'text-hold'}>{r.status === 'block' ? 'Blocked:' : 'Check:'}</span>
-            <span className="min-w-0 break-words text-ink-muted">{r.detail}</span>
+          <li key={r.key} className="grid grid-cols-[1rem_1fr] gap-x-2">
+            <span className="pt-[3px]">
+              <StatusMark s={r.status} />
+            </span>
+            <span className="min-w-0 break-words">
+              {r.who ? <span className="font-semibold">{r.who}: </span> : null}
+              {r.text}
+            </span>
           </li>
         ))}
       </ul>
@@ -225,14 +252,19 @@ export function SendPayouts({ plan }: { plan: PlanView }) {
   );
 }
 
-export function PlanHeader({ plan }: { plan: PlanView }) {
+/** The plan's title ("M7.7 Panama earthquake: 7 households, $680"), where it stands, and its id. */
+export function PlanHeader({ plan, event = null, headingId }: { plan: PlanView; event?: EventView | null; headingId?: string }) {
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <StatusChip {...planStatus(plan)} size="lg" />
-      <span className="num text-[1.3rem] font-[800]">{usd(plan.verdict?.totalCents ?? 0)}</span>
-      <span className="text-ink-muted">
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <h2 id={headingId} className="text-[1.15rem] font-bold leading-snug">
+          {planTitle(plan, event)}
+        </h2>
+        <StatusChip {...planStatus(plan)} />
+      </div>
+      <p className="mt-0.5 text-[0.85rem] text-ink-dim">
         Plan {plan.id}, version {plan.version}
-      </span>
+      </p>
     </div>
   );
 }

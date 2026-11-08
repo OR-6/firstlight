@@ -85,7 +85,7 @@ export default function MissionControl() {
         <div className="space-y-5 lg:col-span-5">
           {event ? <EventPanel event={event} /> : <div className="panel h-48" aria-busy="true" />}
           {plan ? (
-            <AgentPanel plan={plan} />
+            <AgentPanel plan={plan} event={event} />
           ) : (
             <section className="panel p-5 text-ink-muted">
               <h2 className="text-[1.05rem] font-bold text-ink">No assessment yet</h2>
@@ -105,10 +105,7 @@ export default function MissionControl() {
         <section className="panel overflow-hidden" aria-labelledby="plan-title">
           <div className="space-y-4 border-b border-line-soft p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 id="plan-title" className="sr-only">
-                Plan {plan.id}
-              </h2>
-              <PlanHeader plan={plan} />
+              <PlanHeader plan={plan} event={event} headingId="plan-title" />
               <p className="text-[0.85rem] text-ink-dim">Select a row to see every firewall check for that recipient.</p>
             </div>
             {needsDecision ? <ApprovalForm plan={plan} compact /> : null}
