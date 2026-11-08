@@ -170,14 +170,29 @@ export function plainRule(r: Pick<RuleResult, 'reasonCode' | 'detail'>, opts: { 
     case 'AGENT_ESCALATED':
       return 'The agent asked a person to decide.';
     case 'NOTE_OK':
-      return d.startsWith('empty note') ? 'The agent wrote no note, so the standard note is sent.' : 'The note has no links, numbers or hidden characters.';
+      return d.startsWith('empty note')
+        ? 'The agent wrote no draft note. PayPal sends the fixed note in the household’s language either way.'
+        : 'The agent’s draft note has no links, numbers or hidden characters. PayPal sends the fixed note either way.';
     case 'NOTE_REPLACED': {
       m = d.match(/^note is (\d+) chars \(max (\d+)\)/);
-      if (m) return `The agent's note was ${m[1]} characters (limit ${m[2]}), so the standard note is sent instead.`;
+      if (m) return `The agent’s draft note was ${m[1]} characters (limit ${m[2]}), a sign something is wrong. It is never sent; PayPal sends the fixed note.`;
       m = d.match(/^note (.+); fallback text used/);
-      if (m?.[1]) return `The agent's note ${m[1].replace(/, (?=[^,]*$)/, ' and ')}, so the standard note is sent instead.`;
+      if (m?.[1]) return `The agent’s draft note ${m[1].replace(/, (?=[^,]*$)/, ' and ')}, a sign something is wrong. It is never sent; PayPal sends the fixed note.`;
       break;
     }
+    // R12
+    case 'ALL_ELIGIBLE_COVERED':
+      m = d.match(/^all (\d+) eligible/);
+      return m ? `All ${plural(Number(m[1]), 'eligible household')} are in the plan at their full tier.` : 'Nobody eligible is left out or underpaid.';
+    case 'ELIGIBLE_OMITTED':
+      m = d.match(/^(\d+) eligible household\(s\) left out of the plan: (.+)$/);
+      return m ? `The plan leaves out ${plural(Number(m[1]), 'household')} who should be paid (${m[2]}). A person decides.` : 'The plan leaves out households who should be paid. A person decides.';
+    case 'TIER_BELOW_BAND':
+      m = d.match(/^(\d+) household/);
+      return `The plan pays ${m ? plural(Number(m[1]), 'household') : 'some households'} less than their tier allows. A person decides.`;
+    case 'HOLD_ON_MET_TRIGGER':
+      m = d.match(/and (\d+) enrolled household/);
+      return `The agent held everything although two agencies confirmed the quake${m ? ` and ${plural(Number(m[1]), 'household')} are owed` : ''}. A person should re-run it.`;
     // R10
     case 'NO_PAYABLE_ITEMS':
       return 'No one in the plan can be paid.';
@@ -197,7 +212,13 @@ export function plainRule(r: Pick<RuleResult, 'reasonCode' | 'detail'>, opts: { 
 }
 
 /** Notes the firewall replaced are the English fallback, not the recipient's language. */
-export function noteLang(item: Pick<ItemVerdict, 'ruleTrace'>, locale: string): string | undefined {
+/** Language of the note PayPal sends: the household's template, or the English fallback for an unpaid item. */
+export function noteLang(item: Pick<ItemVerdict, 'amountCents'>, locale: string): string | undefined {
+  return item.amountCents > 0 ? locale || undefined : 'en';
+}
+
+/** Language of the agent's draft: English when the firewall replaced it with the fallback text. */
+export function draftLang(item: Pick<ItemVerdict, 'ruleTrace'>, locale: string): string | undefined {
   const note = item.ruleTrace.find((r) => r.id === 'R9' && r.scope === 'item');
   if (note && (note.reasonCode === 'NOTE_REPLACED' || note.detail.startsWith('empty note'))) return 'en';
   return locale || undefined;

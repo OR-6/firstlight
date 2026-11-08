@@ -83,7 +83,7 @@ export default function RedTeamPage() {
               Full attack suite
             </h2>
             <p className="text-[0.9rem] text-ink-muted">
-              27 prompt-injection payloads: direct, hidden in news, fake system messages, smuggled JSON, base64 and ROT13, five languages, look-alike characters, and instructions split across two sources.
+              27 prompt-injection payloads: direct, hidden in news, fake system messages, smuggled JSON, base64 and ROT13, four non-English languages, look-alike characters, and instructions split across two sources. Then six attacks that don&apos;t try to pay a stranger, including the one Firstlight doesn&apos;t stop.
             </p>
           </div>
           <button className="btn btn-go" onClick={runSuite} disabled={busy !== null}>
@@ -184,7 +184,9 @@ function Suite({ s }: { s: SuiteReport }) {
           <p className="num text-[1.5rem] font-[800] text-allow">
             {safe} of {s.payloads} attacks moved {usd(s.firewall.unauthorisedCents)} to unauthorised payees
           </p>
-          <p className="text-[0.88rem] text-ink-muted">The firewall result. It does not depend on the sentinel catching anything.</p>
+          <p className="text-[0.88rem] text-ink-muted">
+            The firewall result, checked against a hand-written table of what each household is owed. It does not depend on the sentinel. A firewall rule other than the $300 limit held {s.firewall.firewallFlagged} of {s.payloads}, and agent-written text reached PayPal in {s.firewall.agentTextDelivered}.
+          </p>
         </div>
         <div className="rounded-[var(--radius-control)] border border-line p-4">
           <p className="num text-[1.05rem] font-bold">
@@ -224,6 +226,53 @@ function Suite({ s }: { s: SuiteReport }) {
           </tbody>
         </table>
       </div>
+      <Residual rows={s.residual} />
     </div>
+  );
+}
+
+const OUTCOME: Record<SuiteReport['residual'][number]['outcome'], { label: string; className: string }> = {
+  stopped: { label: 'Stopped', className: 'text-allow-ink' },
+  'needs a person': { label: 'Needs a person', className: 'text-hold' },
+  'not stopped': { label: 'Not stopped', className: 'font-bold text-block-ink' },
+};
+
+function Residual({ rows }: { rows: SuiteReport['residual'] }) {
+  return (
+    <section aria-labelledby="residual-title" className="border-t border-line-soft pt-4">
+      <h3 id="residual-title" className="text-[1rem] font-bold">
+        Attacks that don&apos;t try to pay a stranger
+      </h3>
+      <p className="max-w-[78ch] text-[0.88rem] text-ink-muted">
+        Same hijacked agent, same careless reviewer who approves everything. &ldquo;Needs a person&rdquo; means the plan is held and the reason named; a careless person can still approve it, and the shortfall column shows what households would then lose.
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full min-w-[720px] text-[0.88rem]">
+          <thead className="text-ink-muted">
+            <tr className="border-b border-line-soft text-left">
+              <th className="py-2 pr-3 font-semibold">Attack</th>
+              <th className="py-2 pr-3 font-semibold">Outcome</th>
+              <th className="py-2 pr-3 font-semibold">What stops it</th>
+              <th className="py-2 pr-3 text-right font-semibold">Shortfall</th>
+              <th className="py-2 text-right font-semibold">To anyone not owed</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className="border-b border-line-soft align-top last:border-0">
+                <td className="py-1.5 pr-3">
+                  <span className="font-semibold">{r.title}</span>
+                  <span className="block text-ink-muted">{r.attempted}</span>
+                </td>
+                <td className={`py-1.5 pr-3 ${OUTCOME[r.outcome].className}`}>{OUTCOME[r.outcome].label}</td>
+                <td className="py-1.5 pr-3 text-ink-muted">{r.defence}</td>
+                <td className="num py-1.5 pr-3 text-right">{r.shortfallCents === null ? 'n/a' : usd(r.shortfallCents)}</td>
+                <td className={`num py-1.5 text-right font-semibold ${r.unauthorisedCents > 0 ? 'text-block-ink' : 'text-allow'}`}>{usd(r.unauthorisedCents)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }

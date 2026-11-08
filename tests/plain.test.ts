@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { RuleResult } from '../src/firewall/types';
-import { noteLang, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
+import { draftLang, noteLang, plainRule, planSummary, planTitle, usdShort, verdictReasons } from '../src/ui/plain';
 
 const rule = (id: RuleResult['id'], status: RuleResult['status'], reasonCode: RuleResult['reasonCode'], detail: string, scope: RuleResult['scope'] = 'plan'): RuleResult => ({
   id,
@@ -51,9 +51,20 @@ describe('plain-language firewall wording', () => {
     expect(reasons[1]).toContain('so it was lowered');
   });
 
-  it('marks replaced notes as English', () => {
-    expect(noteLang({ ruleTrace: [rule('R9', 'warn', 'NOTE_REPLACED', 'note contains a link or domain; fallback text used', 'item')] }, 'es')).toBe('en');
-    expect(noteLang({ ruleTrace: [rule('R9', 'pass', 'NOTE_OK', '42 chars', 'item')] }, 'es')).toBe('es');
+  it('marks a replaced agent draft as English', () => {
+    expect(draftLang({ ruleTrace: [rule('R9', 'warn', 'NOTE_REPLACED', 'note contains a link or domain; fallback text used', 'item')] }, 'es')).toBe('en');
+    expect(draftLang({ ruleTrace: [rule('R9', 'pass', 'NOTE_OK', '42 chars', 'item')] }, 'es')).toBe('es');
+  });
+
+  it('the note PayPal sends is in the household language when paid, English fallback when not', () => {
+    expect(noteLang({ amountCents: 120_00 }, 'ja')).toBe('ja');
+    expect(noteLang({ amountCents: 0 }, 'ja')).toBe('en');
+  });
+
+  it('explains R12 findings in plain words', () => {
+    expect(plainRule(rule('R12', 'warn', 'ELIGIBLE_OMITTED', '2 eligible household(s) left out of the plan: rcp_03, rcp_05', 'plan'))).toBe(
+      'The plan leaves out 2 households who should be paid (rcp_03, rcp_05). A person decides.',
+    );
   });
 });
 
