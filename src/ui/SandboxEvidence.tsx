@@ -36,7 +36,7 @@ const RUNS: Run[] = [
     idLabel: 'Payout batch',
     result: 'All 7 items SUCCESS, shown live without a reload',
     facts: [
-      { label: 'Where', value: 'The dashboard after a demo reset: replayed Claude Opus 5.5 assessment, approved in the UI' },
+      { label: 'Where', value: 'The dashboard after a demo reset: replayed AI agent assessment, approved in the UI' },
       { label: 'Items', value: '7 of 7 SUCCESS, $680.00 in total' },
       { label: 'Timing', value: 'Statuses arrived live on the page without a reload' },
       { label: 'Audit', value: 'Chain verified, 15 entries' },
@@ -49,7 +49,7 @@ const RUNS: Run[] = [
     idLabel: 'Payout batch',
     result: 'Items SUCCESS at about 26 s, batch at about 33 s',
     facts: [
-      { label: 'Where', value: 'The CLI: a live claude-opus-5-5 assessment (2 turns, about 24 s), approved via the CLI' },
+      { label: 'Where', value: 'The CLI: a live AI agent assessment (2 turns, about 24 s), approved via the CLI' },
       { label: 'Items', value: '7 recipients, $680.00, all SUCCESS; pool $5,000 → $4,320' },
       { label: 'Timing', value: 'Items SUCCESS at about 26 s, batch SUCCESS at about 33 s' },
       { label: 'Audit', value: 'Chain intact, 12 entries' },

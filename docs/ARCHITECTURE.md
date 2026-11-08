@@ -5,9 +5,9 @@
  EMSC (second source) ┼─► signals ─► event store
  USGS narrative text ─┘                │
                                         ▼
- registry (ids, homes, flags) ──► AGENT (Claude, read-only tools) ── plan: ids + tiers only
+ registry (ids, homes, flags) ──► AGENT (LLM, read-only tools)   ── plan: ids + tiers only
                                         │
-                     sentinel (patterns + Claude Haiku), advisory
+                     sentinel (patterns + classifier), advisory
                                         ▼
                                 FIREWALL (pure, R1–R10)
                                         │ verdict (logged: R11)

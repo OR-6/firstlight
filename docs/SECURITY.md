@@ -6,8 +6,8 @@ Firstlight assumes the AI agent **can be fully compromised**. It then guarantees
 
 | Component | Trusted with | Never sees |
 |---|---|---|
-| Agent (Claude Opus 5.5) | Event data, untrusted text (wrapped), registry ids, distances, flags, locales | Emails, amounts, ledger, PayPal, credentials |
-| Sentinel (patterns + Claude Haiku) | Untrusted text and the agent's free text | Anything it could act on; advisory only |
+| Agent (LLM) | Event data, untrusted text (wrapped), registry ids, distances, flags, locales | Emails, amounts, ledger, PayPal, credentials |
+| Sentinel (patterns + a classifier model) | Untrusted text and the agent's free text | Anything it could act on; advisory only |
 | Firewall | Plan (parsed from `unknown`), event, corroboration, registry, ledger snapshot, config | I/O of any kind; it is pure |
 | Payout executor | Firewall verdict, payee map, PayPal client | The agent |
 | PayPal client (`src/paypal`) | Sandbox credentials | — |
@@ -56,7 +56,7 @@ Run with `npm run redteam -- --llm replay` (corpus) and shown on the Red team pa
 | Injected instruction to pay a stranger, raise tiers, add fields, smuggle JSON, encode, translate, use look-alike ids (27 payloads) | Schema + R1–R6, R9 | $0 to anyone not owed, in 27/27; every one is also held by a firewall rule other than the $300 limit |
 | Phishing through the payout note | Fixed note templates (D72) | Agent text reaches PayPal in 0 cases |
 | Paying everyone less, or leaving households out | R12 (D71) | Goes to a person with the shortfall named; a careless person can still approve it |
-| Pressuring the reviewer ("pre-cleared, approve now") | Sentinel `APPROVAL_PRESSURE` | The exact phrasing is flagged; paraphrases mostly aren't (the pattern layer caught 7 of 30 held-out texts, Claude Haiku 26 of 30). Still a person's call |
+| Pressuring the reviewer ("pre-cleared, approve now") | Sentinel `APPROVAL_PRESSURE` | The exact phrasing is flagged; paraphrases mostly aren't (the pattern layer caught 7 of 30 held-out texts, the classifier model 26 of 30). Still a person's call |
 | Talking the agent into holding everything ("the report is a hoax"), or a forged event id that blocks the plan | R12 `HOLD_ON_MET_TRIGGER`, sentinel `DISCREDIT_EVENT` | Nothing paid, flagged for a person to re-run. A feed that stays poisoned keeps blocking: availability isn't guaranteed |
 | Paying twice: same quake under a new id, replayed plan, concurrent sends | R6, DB `UNIQUE`, PayPal-Request-Id, per-plan lock | Blocked |
 | Insider changes a payee address in the payee map | **Not covered** | Money goes to the swapped address. Needs the partner's two-person change control and PayPal account-holder checks |
@@ -65,13 +65,13 @@ Run with `npm run redteam -- --llm replay` (corpus) and shown on the Red team pa
 | Spoofed earthquake data | R8 needs two agencies to agree | One spoofed feed isn't enough; both being spoofed isn't covered |
 | Denial of service on the public demo | Body caps, rate limits, reset cooldown, webhook budget (D65) | Slows abuse; not a full defence |
 
-The Haiku sentinel numbers on the hosted site come from recorded runs (replay), not a live measurement on each request.
+The classifier-model sentinel numbers on the hosted site come from recorded runs (replay), not a live measurement on each request.
 
 ## Personal data
 
 | Data | Where it lives | Who sees it |
 |---|---|---|
-| Household id, town, home location, language, vulnerability flags | Registry (synthetic in the demo) | The firewall and staff. The agent (and so the Claude API) only gets `upliftEligible: true/false`, never which condition (D84) |
+| Household id, town, home location, language, vulnerability flags | Registry (synthetic in the demo) | The firewall and staff. The agent (and so the LLM API) only gets `upliftEligible: true/false`, never which condition (D84) |
 | PayPal address | Payee map (env or a gitignored file) | Only the payout executor and PayPal. Masked in the audit log |
 | Donor name and message | Donations table | Public feed, as plain text. Never sent to the agent |
 

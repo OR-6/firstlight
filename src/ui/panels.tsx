@@ -80,7 +80,7 @@ export function AgentPanel({ plan, event = null }: { plan: PlanView; event?: Eve
           </span>
         </h2>
         <span className="text-[0.82rem] text-ink-dim">
-          {plan.agent.model}, {plan.agent.turns} turns{recorded ? ', recorded run replayed' : plan.llmMode === 'record' ? ', live run (recorded)' : plan.llmMode === 'scripted' ? ', scripted' : ', live'}
+          {plan.llmMode === 'firewall' ? 'Firewall floor plan, no AI' : `AI agent, ${plan.agent.turns} turns`}{recorded ? ', recorded run replayed' : plan.llmMode === 'record' ? ', live run (recorded)' : plan.llmMode === 'scripted' ? ', scripted' : ', live'}
         </span>
       </div>
       <p className="mt-2 max-w-[72ch] text-[0.98rem] font-semibold leading-snug">{planSummary(plan, event)}</p>
@@ -113,7 +113,7 @@ export function AgentPanel({ plan, event = null }: { plan: PlanView; event?: Eve
             <ul className="mt-2 space-y-1.5 text-[0.84rem]">
               {findings.slice(0, 30).map((f, i) => (
                 <li key={i} className="grid grid-cols-[auto_1fr] gap-x-2">
-                  <span className="text-ink-dim">{f.layer === 'llm' ? 'Claude Haiku' : 'Pattern'}</span>
+                  <span className="text-ink-dim">{f.layer === 'llm' ? 'Classifier model' : 'Pattern'}</span>
                   <span className="min-w-0 break-words text-ink-muted">
                     <span className="text-ink">{f.target.replace('untrusted:', '')}</span>: {f.excerpt}
                   </span>

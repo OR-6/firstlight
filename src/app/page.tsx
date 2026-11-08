@@ -28,9 +28,9 @@ function showOutcome() {
 
 function llmLine(mode: string | undefined): string | null {
   if (mode === undefined) return null;
-  if (mode === 'replay') return 'Replays the recorded Claude Opus 5.5 run for this real earthquake.';
-  if (mode === 'scripted') return 'Uses a scripted test agent, not Claude.';
-  return 'Calls Claude live.';
+  if (mode === 'replay') return 'Replays the recorded AI agent run for this real earthquake.';
+  if (mode === 'scripted') return 'Uses a scripted test agent, not the AI model.';
+  return 'Calls the AI model live.';
 }
 
 export default function MissionControl() {

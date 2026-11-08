@@ -21,7 +21,7 @@ After an earthquake, relief cash usually takes weeks and an application form. Ea
 
 ## vo_02: One household, one quake (0:16–0:38, about 55 words)
 
-Take this household in Chitré, Panama: an older woman with limited mobility, enrolled in August by a local partner. On the ninth of October a magnitude seven point seven earthquake hits. Two seismic agencies agree on it, and a Claude agent drafts payouts for the seven enrolled households nearby, using rules the programme agreed before the quake.
+Take this household in Chitré, Panama: an older woman with limited mobility, enrolled in August by a local partner. On the ninth of October a magnitude seven point seven earthquake hits. Two seismic agencies agree on it, and an AI agent drafts payouts for the seven enrolled households nearby, using rules the programme agreed before the quake.
 
 ## vo_03: The firewall (0:38–1:00, about 60 words)
 
@@ -41,4 +41,4 @@ Other AI agents can give too. A person sets an allowance: who the agent is, how 
 
 ## vo_07: Close (2:16–2:38, about 40 words)
 
-Firstlight. Earthquake relief cash in minutes, for cash programmes that already enrol households. Six hundred and eighty dollars to seven households in twenty-five seconds, and twenty-seven attacks that moved nothing. The model proposes; the code disposes. Built with Claude and PayPal Payouts, Orders and webhooks.
+Firstlight. Earthquake relief cash in minutes, for cash programmes that already enrol households. Six hundred and eighty dollars to seven households in twenty-five seconds, and twenty-seven attacks that moved nothing. The model proposes; the code disposes. Built on PayPal Payouts, Orders and webhooks.

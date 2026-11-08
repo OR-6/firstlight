@@ -20,9 +20,9 @@ Lead with the relief, not the firewall: about 160 entries this year pitch an "ag
 
 ## 3. Elevator pitch (short description, under 200 characters)
 
-> Relief cash to families enrolled before an earthquake, minutes after it's confirmed: no application. A Claude agent drafts, a deterministic firewall checks, PayPal Payouts pays.
+> Relief cash to families enrolled before an earthquake, minutes after it's confirmed: no application. An AI agent drafts, a deterministic firewall checks, PayPal Payouts pays.
 
-(176 characters. Longer version for places with room: "For aid organisations that run cash programmes. When two seismic agencies confirm a strong earthquake near families they enrolled beforehand, a Claude agent drafts the payouts within minutes and nobody has to apply. A deterministic firewall checks every payment before PayPal Payouts sends it: a hijacked agent can't pay anyone who isn't owed, can't pay more than the tier table allows, and can't write a word to recipients. If it pays someone less or leaves them out, a person sees exactly who.")
+(176 characters. Longer version for places with room: "For aid organisations that run cash programmes. When two seismic agencies confirm a strong earthquake near families they enrolled beforehand, an AI agent drafts the payouts within minutes and nobody has to apply. A deterministic firewall checks every payment before PayPal Payouts sends it: a hijacked agent can't pay anyone who isn't owed, can't pay more than the tier table allows, and can't write a word to recipients. If it pays someone less or leaves them out, a person sees exactly who.")
 
 ---
 
@@ -36,22 +36,22 @@ An AI agent could make that call in minutes. But nobody should hand a language m
 ### What it does
 - **For the cash-programme lead at a Red Cross national society or a cash NGO.** Their field partners enrol households before a disaster; the firewall's settings are the programme's pre-agreed trigger and payment rules. In our sandbox run, $680 reached seven households about 25 seconds after the batch was sent (PayPal batch `9GE626X9SA3NE`), and nobody applied.
 - **Real earthquake data.** USGS, cross-checked against a second agency (EMSC). The hosted demo replays the real M7.7 Panama earthquake of 9 October 2026 so every run is reproducible; `npm run fetch:usgs` reads the live feeds.
-- **A Claude agent drafts the plan.** It decides whether the trigger is genuinely met, explains why, assigns each enrolled household a tier by distance with one tier up for a vulnerability, and flags anything a person should look at.
+- **An AI agent drafts the plan.** It decides whether the trigger is genuinely met, explains why, assigns each enrolled household a tier by distance with one tier up for a vulnerability, and flags anything a person should look at.
 - **A deterministic payment firewall decides.** It recomputes eligibility and every amount itself, enforces per-person and per-event caps, blocks duplicates of the same disaster, and checks the opposite direction too: a plan that leaves an eligible household out or pays one too little can't go out automatically; the reviewer is shown who, and how much they'd lose (rule R12).
 - **PayPal pays.** Approved plans go out as one **PayPal Payouts** batch; signature-verified **webhooks** drive live status. Recipients get a fixed, pre-translated note: what the money is, that nothing is needed, to ask their local relief partner with questions, and that nobody will ask for a password, code or fee. The agent can't write to them, so it can't phish them.
-- **People and other AI agents fund the pool** through **PayPal Orders v2**. Any MCP client (for example Claude Code after one `claude mcp add`) can donate, but it can't spend on its own: each donation is an order a person approves on PayPal, inside an allowance (label, cap, expiry) the server enforces. Each allowance is tied to the one PayPal account that approves its first payment; anything approved by another account isn't captured. Every receipt is confirmed live with PayPal through PayPal's own hosted MCP server, carries the capture id the donor can match in their PayPal activity, and the agent recomputes the audit hash chain itself.
+- **People and other AI agents fund the pool** through **PayPal Orders v2**. Any MCP client can donate, but it can't spend on its own: each donation is an order a person approves on PayPal, inside an allowance (label, cap, expiry) the server enforces. Each allowance is tied to the one PayPal account that approves its first payment; anything approved by another account isn't captured. Every receipt is confirmed live with PayPal through PayPal's own hosted MCP server, carries the capture id the donor can match in their PayPal activity, and the agent recomputes the audit hash chain itself.
 - **A Red Team page anyone can run**: 27 injection attacks against an agent we scripted to obey every one ($0.00 reached anyone not owed), and six quieter attacks (underpaying, leaving people out, phishing through the note, an insider swapping a payee) shown with their real outcome, including the one we don't stop.
 
 ### How we built it
-- **Capability restriction instead of detection.** The agent can only name registry ids and tiers. Its output has no field for an email, an amount or an account, and its notes are never sent. An injection has nowhere to put an attacker. A sentinel (patterns plus Claude Haiku) adds a second, advisory layer.
+- **Capability restriction instead of detection.** The agent can only name registry ids and tiers. Its output has no field for an email, an amount or an account, and its notes are never sent. An injection has nowhere to put an attacker. A sentinel (patterns plus a small classifier model) adds a second, advisory layer.
 - **The agent never holds credentials.** Only the PayPal module does, and it only acts on verdicts that are in the audit log, after re-running the firewall against the ledger as it is at that moment.
 - **PayPal Payouts:** one batch per approved plan. Its PayPal-Request-Id comes from the firewall verdict, so a retry can't pay twice; a timeout is resent under the same id; `sender_item_id` is event:household. Item statuses (SUCCESS, UNCLAIMED, RETURNED…) and PayPal's transaction ids and failure reasons are reconciled with a GET on every signature-verified webhook, with polling as a fallback.
 - **PayPal Orders v2** through the PayPal Server SDK: captured on the return URL or on `CHECKOUT.ORDER.APPROVED` for donors who never come back. Pending or denied captures never credit the pool; refund and reversal webhooks debit it.
-- **APIMatic Context Plugin:** gave Claude Code the PayPal Server SDK's endpoints and models while we built the Orders integration (create, capture, payer-action link, request ids).
-- **AI:** Claude Opus 5.5 is the agent (strict tool schemas, read-only tools, one repair turn); Claude Haiku 5.5 is the sentinel. Built with Claude Code.
+- **APIMatic Context Plugin:** gave our AI coding assistant the PayPal Server SDK's endpoints and models while we built the Orders integration (create, capture, payer-action link, request ids).
+- **AI:** an LLM is the agent (strict tool schemas, read-only tools, one repair turn); a small classifier model is the advisory sentinel.
 - **Stack:** Next.js and TypeScript, SQLite, AG Grid, Leaflet, hosted on Render. A pure firewall (no I/O, no clock, no LLM), tested by import-graph checks.
 - **Design:** an operations console in the language of road signs (Overpass, guide-sign green, warning-yellow diamonds, red octagons). Status reads by shape as well as colour, and every household opens to a plain-English list of each firewall check.
-- **Replay mode:** on the hosted demo the recorded Claude run is replayed, so you can try the whole flow, including real sandbox payouts, without keys of your own. Locally, assessing and the red team need no keys; paying needs PayPal sandbox credentials.
+- **Replay mode:** on the hosted demo the recorded agent run is replayed, so you can try the whole flow, including real sandbox payouts, without keys of your own. Locally, assessing and the red team need no keys; paying needs PayPal sandbox credentials.
 - **Honest limits:** in the demo anyone can approve (no sign-in); a real deployment needs staff sign-in and two approvers above a threshold.
 
 ### Challenges we ran into
@@ -60,7 +60,7 @@ An AI agent could make that call in minutes. But nobody should hand a language m
 - PayPal batch webhooks don't carry item detail, so status is reconciled by fetching the batch; a failed webhook is processed on PayPal's retry instead of being dropped as a duplicate.
 
 ### Accomplishments we're proud of
-- **$0 to anyone not owed in 27 of 27 attacks** against an agent we scripted to obey every one, judged against a hand-written table of what each household is owed. Every attack is also held by a firewall rule other than the $300 approval limit, and agent-written text reached PayPal in none. The advisory sentinel (patterns plus Claude Haiku) flagged them too, but the guarantee doesn't depend on it.
+- **$0 to anyone not owed in 27 of 27 attacks** against an agent we scripted to obey every one, judged against a hand-written table of what each household is owed. Every attack is also held by a firewall rule other than the $300 approval limit, and agent-written text reached PayPal in none. The advisory sentinel (patterns plus a classifier model) flagged them too, but the guarantee doesn't depend on it.
 - Real sandbox payouts: batch `9GE626X9SA3NE` paid $680 to seven sandbox accounts in about 25 seconds, confirmed by seven signature-verified `PAYMENT.PAYOUTS-ITEM.SUCCEEDED` webhooks.
 - Any MCP client can donate with no SDK: `tools/list` publishes the enforced limits, refusals come back as typed codes (`ALLOWANCE_UNKNOWN`, `ALLOWANCE_EXCEEDED`), and our example agent recomputes every audit hash itself.
 - An honest residual-risk table: a reviewer who approves without reading would still let under-payment through (the page shows the dollar shortfall), and an insider swapping a payee address is not stopped. We say so on the page.
@@ -86,16 +86,15 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 
 ## 5. Built with (tags)
 
-`paypal` `paypal-payouts-api` `paypal-orders-api` `paypal-webhooks` `paypal-server-sdk` `claude` `anthropic-api` `claude-code` `model-context-protocol` `apimatic` `ag-grid` `render` `typescript` `nextjs` `react` `nodejs` `sqlite` `tailwindcss` `leaflet` `usgs-earthquake-api` `emsc` `zod` `vitest`
+`paypal` `paypal-payouts-api` `paypal-orders-api` `paypal-webhooks` `paypal-server-sdk` `ai-agents` `llm` `model-context-protocol` `apimatic` `ag-grid` `render` `typescript` `nextjs` `react` `nodejs` `sqlite` `tailwindcss` `leaflet` `usgs-earthquake-api` `emsc` `zod` `vitest`
 
 ## 6. Tools used and how (the form asks for this)
 
-- **Claude Code** — used to build the application, tests and docs.
-- **Claude (Anthropic API)** — Claude Opus 5.5 is the runtime agent: it checks the trigger is met, assigns tiers and flags anything a person should see; it never writes what recipients receive. Claude Haiku 5.5 is the advisory injection sentinel.
+- **An LLM (via API)** — the runtime agent: it checks the trigger is met, assigns tiers and flags anything a person should see; it never writes what recipients receive. A small classifier model is the advisory injection sentinel.
 - **PayPal Payouts API** — relief disbursement. **Orders v2** (PayPal Server SDK) — donations. **Webhooks** — payout batch and item status, plus donation capture, pending, denied, refund and reversal events, each checked with verify-webhook-signature and de-duplicated. **PayPal sandbox** — all testing. **PayPal's hosted MCP server** (sandbox, read-only `get_order` only) confirms every donation receipt live with PayPal, with the Server SDK as fallback; PayPal's toolkit has no Payouts call, so payouts use the REST API behind the firewall. **Transaction Search** (Server SDK) for the balance check and reconciliation when the app has the scope.
 - **Model Context Protocol** — Firstlight runs a Streamable HTTP MCP server at `/mcp` (get_pool_status, list_active_events, get_allowance, create_donation, get_receipt) with strict input and output schemas, plus a `/.well-known/firstlight.json` manifest and `/llms.txt` so agents can find it.
 - **USGS Earthquake Hazards API** — the recorded M7.7 Panama event (us6000u18k) the demo replays, plus a read-only live-feed script. **EMSC SeismicPortal** — independent corroboration.
-- **APIMatic Context Plugin for PayPal** — gave Claude Code the PayPal API context while we built the integration.
+- **APIMatic Context Plugin for PayPal** — gave our AI coding assistant the PayPal API context while we built the integration.
 - **AG Grid** — plan and payout tables. **Render** — hosting.
 - **Leaflet / OpenStreetMap** — map.
 
@@ -112,11 +111,11 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 The full production plan is in [docs/VIDEO_PLAN.md](docs/VIDEO_PLAN.md) (shot list, capture commands, edit, upload) and the script to read is in [docs/VOICEOVER.md](docs/VOICEOVER.md). One story:
 
 1. **0:00** The problem (relief cash takes weeks and a form; early cash works) and who it's for.
-2. **0:16** A synthetic household in Chitré, enrolled in August; the M7.7 quake; two agencies agree; the Claude agent drafts seven payouts under pre-agreed rules.
+2. **0:16** A synthetic household in Chitré, enrolled in August; the M7.7 quake; two agencies agree; the AI agent drafts seven payouts under pre-agreed rules.
 3. **0:38** The firewall's working for that household, the R12 shortfall warning, and the fixed Spanish note the agent can't change.
 4. **1:00** A person approves $680; PayPal Payouts lands it in about 25 s; the same batch id on Payouts and in her sandbox account.
 5. **1:28** The scripted hijacked agent: $0.00 to anyone not owed; what it can still try (shortfall shown); the insider swap we don't stop.
-6. **1:58** A real Claude Code session donates over MCP, refused over its allowance, then approved by a person on PayPal; the receipt verifies.
+6. **1:58** A real AI assistant donates over MCP, refused over its allowance, then approved by a person on PayPal; the receipt verifies.
 7. **2:16** "$680, 7 households, ~25 s. 27 attacks, $0 redirected. The model proposes; the code disposes."
 
 ---

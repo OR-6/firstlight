@@ -144,7 +144,7 @@ export function llmsTxt(baseUrl: string): string {
   const b = baseUrl.replace(/\/$/, '');
   return `# Firstlight
 
-> Earthquake relief cash in minutes, no application needed: households an aid organisation enrolled before the quake are paid when two seismic agencies confirm it. A Claude agent drafts the payouts, a deterministic firewall checks them, PayPal Payouts sends them. People and AI agents can fund the pool; a person approves every payment on PayPal. PayPal SANDBOX only: no real money moves.
+> Earthquake relief cash in minutes, no application needed: households an aid organisation enrolled before the quake are paid when two seismic agencies confirm it. An AI agent drafts the payouts, a deterministic firewall checks them, PayPal Payouts sends them. People and AI agents can fund the pool; a person approves every payment on PayPal. PayPal SANDBOX only: no real money moves.
 
 Donor agents can fund the relief pool, but only under an allowance a person gave them, and a person approves every payment on PayPal.
 

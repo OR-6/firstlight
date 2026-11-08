@@ -43,7 +43,7 @@ const ROLES: { who: string; uses: string; can: string }[] = [
 /** The path a payment takes, with who acts at each stage. Same sign-board look as the live board on Mission control. */
 const STAGES: { name: string; who: string; does: string; mark: State }[] = [
   { name: 'Earthquake confirmed', who: 'USGS and EMSC', does: 'M6.0 or stronger, or a PAGER orange alert, reported by two independent seismic agencies.', mark: 'done' },
-  { name: 'Agent drafts', who: 'Claude, the AI agent', does: 'Reads both reports and picks enrolled households and a tier for each. It never sees an email or an amount.', mark: 'done' },
+  { name: 'Agent drafts', who: 'The AI agent', does: 'Reads both reports and picks enrolled households and a tier for each. It never sees an email or an amount.', mark: 'done' },
   { name: 'Firewall checks', who: 'Fixed code, no AI', does: 'Recomputes every amount from the tier table and checks eligibility, limits, budget and duplicates. It can stop the plan.', mark: 'stop' },
   { name: 'Person approves', who: 'Aid organisation staff', does: 'Only when the firewall flags something, such as a total over $300. Approving can never raise an amount.', mark: 'wait' },
   { name: 'PayPal pays', who: 'PayPal Payouts', does: 'One batch to the households’ own PayPal accounts, with a note in their language.', mark: 'done' },

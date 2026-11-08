@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 let cached: SuiteReport | null = null;
 
-/** Full corpus. Claude Haiku sentinel results come from recordings (no API calls). */
+/** Full corpus. Classifier-model sentinel results come from recordings (no API calls). */
 export async function POST() {
   try {
     cached = await runSuite(new ReplayLlm());

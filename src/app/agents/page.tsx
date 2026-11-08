@@ -123,7 +123,7 @@ export default function AgentsPage() {
   -H 'Content-Type: application/json' \\
   -H 'Accept: application/json, text/event-stream' \\
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'`;
-  const claudeAdd = `claude mcp add --transport http firstlight ${origin}/mcp`;
+  const mcpConfig = JSON.stringify({ mcpServers: { firstlight: { type: 'http', url: `${origin}/mcp` } } }, null, 2);
 
   return (
     <div className="space-y-8">
@@ -166,7 +166,7 @@ export default function AgentsPage() {
         <p className={`${PROSE} text-ink-muted`}>No clone needed. These talk to this site&apos;s MCP endpoint and change nothing.</p>
         <Snippet caption="Start an MCP session" code={initialize} />
         <Snippet caption="List the tools with their input and output schemas" code={toolsList} />
-        <Snippet caption="Add Firstlight to Claude Code" code={claudeAdd} />
+        <Snippet caption="Add Firstlight to any MCP client (Streamable HTTP)" code={mcpConfig} />
       </section>
 
       <AllowanceSection origin={origin} />

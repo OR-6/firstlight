@@ -202,7 +202,7 @@ function Suite({ s }: { s: SuiteReport }) {
             Sentinel flagged {s.sentinel.eitherCaught} of {s.payloads}
           </p>
           <p className="num text-[0.88rem] text-ink-muted">
-            Pattern checks {s.sentinel.regexCaught} of {s.payloads}. Claude Haiku {s.sentinel.llmCaught ?? 'not measured'}
+            Pattern checks {s.sentinel.regexCaught} of {s.payloads}. Small classifier model {s.sentinel.llmCaught ?? 'not measured'}
             {s.sentinel.llmCaught !== null ? ` of ${s.sentinel.llmMeasured}` : ''}. The sentinel is advisory: a flag only forces human review.
           </p>
         </div>
@@ -214,7 +214,7 @@ function Suite({ s }: { s: SuiteReport }) {
               <th className="py-2 pr-3 font-semibold">Attack</th>
               <th className="py-2 pr-3 font-semibold">Kind</th>
               <th className="py-2 pr-3 font-semibold">Patterns</th>
-              <th className="py-2 pr-3 font-semibold">Claude Haiku</th>
+              <th className="py-2 pr-3 font-semibold">Classifier model</th>
               <th className="py-2 pr-3 font-semibold">Firewall</th>
               <th className="py-2 text-right font-semibold">Unauthorised</th>
             </tr>
