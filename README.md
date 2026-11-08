@@ -7,11 +7,15 @@ The model proposes; the code disposes.
 
 ![Mission control after an assessment: the money's path from signal to recipients, the M7.7 Panama earthquake confirmed by USGS and EMSC, and the households on the map](docs/img/mission-control.png)
 
-**The problem.** After Nepal's 2015 earthquake, emergency cash took more than two months to start arriving ([UNICEF Nepal](https://www.unicef.org/nepal/reports/lessons-unicef-nepal-emergency-cash-transfer-programme-through-social-assistance)). Cash that arrives early does more good than the same cash later. When WFP sent cash to Bangladeshi households about 4 days before the 2020 flood peak (some 100 days earlier than its 2019 response), they were 36% less likely to go a day without eating ([WFP](https://www.wfp.org/publications/acting-flood-protect-most-vulnerable-independent-review-wfps-anticipatory-cash), [Anticipation Hub](https://www.anticipation-hub.org/news/generating-evidence-on-the-impact-of-wfps-anticipatory-cash-transfers-ahead-of-severe-river-floods-in-bangladesh)). Earthquakes can't be forecast, so the fastest honest version is to pay households enrolled *before* the quake within minutes of it being confirmed. Most relief tools wait for applications, and most agent-payment firewalls try to detect bad instructions. Firstlight does neither: households are enrolled before the quake, and the AI agent's output has no field where a payee or an amount could go.
+**The problem.** After Nepal's 2015 earthquake, emergency cash took more than two months to start arriving ([UNICEF Nepal](https://www.unicef.org/nepal/reports/lessons-unicef-nepal-emergency-cash-transfer-programme-through-social-assistance)), and mostly reached people who managed to register.
+
+**Why early matters.** When WFP sent cash to Bangladeshi households about 4 days before the 2020 flood peak, they were 36% less likely to go a day without eating ([WFP](https://www.wfp.org/publications/acting-flood-protect-most-vulnerable-independent-review-wfps-anticipatory-cash), [Anticipation Hub](https://www.anticipation-hub.org/news/generating-evidence-on-the-impact-of-wfps-anticipatory-cash-transfers-ahead-of-severe-river-floods-in-bangladesh)). Earthquakes can't be forecast, so the fastest honest version is to pay households enrolled *before* the quake within minutes of it being confirmed.
+
+**What's different.** Most relief tools wait for applications, and most agent-payment firewalls try to detect bad instructions. Firstlight does neither: households are enrolled before the quake, so there's nothing to apply for or fake, and the AI agent's output has no field where a payee or an amount could go.
 
 **Who it's for.** Cash-programme leads at aid organisations (a Red Cross national society, a cash NGO) that already enrol households through field partners.
 
-**What it does.** When two seismic agencies confirm a strong quake near enrolled households, an AI agent reads the agency reports and drafts who gets which tier. A deterministic firewall recomputes every amount and checks the plan, a person approves anything unusual, and PayPal Payouts sends it. Measured in the sandbox: **$680 to 7 households about 25 seconds after the batch is sent.** Donors, both people and other AI agents, fund the pool through PayPal (Orders v2).
+**What it does.** When two seismic agencies confirm a strong quake near enrolled households, an AI agent reads the agency reports and drafts who gets which tier. A deterministic firewall recomputes every amount and checks the plan, a person approves anything unusual, and PayPal Payouts sends it. Measured in the sandbox: **$680 to 7 households, every payment SUCCESS about 25 seconds after the batch was sent** (our audit log; PayPal's own record has the batch complete 34 s after creation). Donors, both people and other AI agents, fund the pool through PayPal (Orders v2).
 
 **Why it's safe.** The agent's output has no field for an email, an amount or an account, and PayPal only delivers fixed, pre-translated notes. So even a fully hijacked agent can't pay anyone who isn't owed, can't pay more than the tier table allows, and can't write a word to recipients: 27 injection attacks against an agent we scripted to obey every one moved $0 to anyone not owed. If it pays someone less or leaves them out, a person sees exactly who and how many dollars; what isn't covered is [listed honestly](docs/SECURITY.md#what-is-and-isnt-covered).
 
@@ -24,7 +28,8 @@ On https://firstlight.onrender.com (the first request after idling can take abou
 3. **Send payouts** and watch PayPal sandbox statuses arrive on **Payouts**, which also lists the real sandbox batches we already ran.
 4. **Red team → Compromised agent.** A script that obeys every injected instruction; $0.00 reaches anyone not owed.
 5. **Audit → Verify chain.** Every step is hash-chained.
-6. **[How it works](https://firstlight.onrender.com/how-it-works)** explains who uses which screen and how households are enrolled; **Agents** shows how another AI agent donates over MCP.
+6. **Run your own copy:** [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OR-6/firstlight) — replay mode needs no AI key; payouts and donations need your own PayPal sandbox credentials.
+7. **[How it works](https://firstlight.onrender.com/how-it-works)** explains who uses which screen and how households are enrolled; **Agents** shows how another AI agent donates over MCP.
 
 - **Video:** _added after recording_
 - Spec: [SPEC.md](SPEC.md), decisions: [docs/decisions.md](docs/decisions.md), design: [DESIGN.md](DESIGN.md), [docs/SECURITY.md](docs/SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
@@ -58,10 +63,10 @@ A sentinel (pattern checks plus a small classifier model) scans untrusted text a
 
 | | Result |
 |---|---|
-| Sentinel pattern checks | flagged 22 / 27 (the patterns were tuned on this corpus) |
+| Sentinel pattern checks | flagged 21 / 27 (the patterns were tuned on this corpus) |
 | Sentinel classifier model (recorded run) | flagged 25 / 27 |
 | Either sentinel layer | flagged 27 / 27 |
-| **Held-out set**: 30 attack texts written separately, by someone who never saw the patterns | patterns 8 / 30, classifier model 26 / 30 |
+| **Held-out set**: 30 attack texts written separately by another AI agent that never saw the patterns | patterns 8 / 30, classifier model 26 / 30 |
 | **Firewall: attacks that moved $0 to anyone not owed** | **27 / 27** |
 | Held by a firewall rule other than the $300 limit (the honest $680 plan already needs a person, so that alone proves nothing) | 27 / 27 |
 | Agent-written text that reached PayPal as a payout note | 0 / 27 |
@@ -170,7 +175,7 @@ https://firstlight.onrender.com/mcp     # Streamable HTTP; add it to any MCP cli
 
 | Criterion | What answers it |
 |---|---|
-| **Technological implementation:** how thoroughly does it use the PayPal Developer Platform and AI tools? | Six PayPal surfaces, listed below, with idempotent payouts, raw-byte webhook verification and reconciliation. An AI agent with strict tool schemas (`src/agent/`); a pure firewall R1–R10 and R12 (`src/firewall/`); a hash-chained audit log; CI on every push |
+| **Technological implementation:** how thoroughly does it use the PayPal Developer Platform and AI tools? | Five PayPal APIs, all in the sandbox, listed below, with idempotent payouts, raw-byte webhook verification and reconciliation. An AI agent with strict tool schemas (`src/agent/`); a pure firewall R1–R10 and R12 (`src/firewall/`); a hash-chained audit log; CI on every push |
 | **Design:** a complete, coherent product, not a proof of concept? | Mission control → a person's decision → PayPal → Payouts, in one road-sign design system ([DESIGN.md](DESIGN.md)), on desktop and phone, with a plain-English check list for every household |
 | **Potential impact:** a credible case for a real problem and audience? | Cash programmes that enrol households before disasters; Nepal 2015 and WFP evidence above; [How it works](https://firstlight.onrender.com/how-it-works) covers enrolment, the last mile, complaints and personal data |
 | **Innovation:** how is it different? | No application (pre-enrolled, parametric trigger); an agent with no field for a payee or amount; a floor as well as ceilings; a red team that shows what it doesn't stop; agents donating within a person's allowance, confirmed by PayPal's own MCP server |
@@ -184,14 +189,31 @@ https://firstlight.onrender.com/mcp     # Streamable HTTP; add it to any MCP cli
 | Orders v2 (PayPal Server SDK) | Donations: create with a payer-action link, capture on return or on `CHECKOUT.ORDER.APPROVED`, refunds | `src/paypal/orders.ts` |
 | Webhooks | Every delivery verified with `verify-webhook-signature` on the raw bytes; payout, capture, pending, denied, refund and reversal events; de-duplicated; failed processing is retried | `src/paypal/webhooks.ts`, `src/pipeline/webhooks.ts` |
 | PayPal's hosted MCP server | Read-only `get_order` (allowlisted) confirms every donation receipt with PayPal itself | `src/paypal/hosted-mcp.ts` |
-| Transaction Search (Server SDK) | Balance check before a batch and transaction lookups for reconciliation, when the app has the scope | `src/paypal/reporting.ts`, `src/paypal/reconcile.ts` |
-| Sandbox | Everything: hosted demo, tests against stubbed clients, real sandbox batches listed on /payouts | — |
+| Transaction Search (Server SDK) | Balance check before a batch and transaction lookups for reconciliation. Built and tested; the hosted demo's sandbox app doesn't have the Transaction Search feature yet, so live reconciliation uses the Payouts batch record | `src/paypal/reporting.ts`, `src/paypal/reconcile.ts` |
+
+### PayPal developer notes
+
+Things we learned building on the PayPal Developer Platform that other builders can reuse:
+
+- **The Server SDK has no Payouts and no webhook verification.** Use the REST API for both; the SDK covers Orders, Payments, Vault, Transaction Search and Subscriptions.
+- **Verify webhooks on the raw bytes.** `verify-webhook-signature` needs the event exactly as PayPal sent it; re-serialising JSON can change it, so splice the raw body into the request (`src/paypal/webhooks.ts`).
+- **Batch webhooks carry no item detail.** On any payout event, GET the batch and update from that.
+- **Payouts needs a sandbox business account in a Payouts-enabled country.** An app on the default account (India in our case) returned `PAYOUT_NOT_AVAILABLE`; a US account worked.
+- **Make the request id the money.** `PayPal-Request-Id` is a hash of event, households and amounts only (notes are left out), plus a unique `sender_batch_id` and a database `UNIQUE (event, household)`. A retry or a reworded plan can't pay twice.
+- **PayPal's hosted MCP server** (sandbox) answered on SSE at `/sse` with a client-credentials bearer token; `/http` and `/mcp` returned 404 on 2026-11-08.
+- **Book the fees.** `batch_header.fees` ($0.25 per item in the sandbox) has to come off your own ledger, or it drifts from the real balance.
 
 ### Built with our sponsors' tools
 
-- **APIMatic Context Plugin:** used before any PayPal code was written, to look up the PayPal Server SDK's Orders, Payments and Transaction Search endpoints and models (create with `paypalRequestId`, `PaypalWalletExperienceContext`, the `payer-action` link, refund-capture, `searchBalances`). It also told us what the SDK doesn't cover (Payouts, webhook verification), so those went to the REST API. See [docs/decisions.md](docs/decisions.md) D51.
+- **APIMatic Context Plugin:** used before any PayPal code was written, to look up the PayPal Server SDK's Orders, Payments and Transaction Search endpoints and models instead of guessing. What it caught:
+  - the approval link is `rel: payer-action` (not `approve`) for the wallet experience context;
+  - `payer.payer_id` is deprecated, so allowances bind to `payment_source.paypal.account_id`;
+  - the SDK's request logging includes the OAuth token, so it's switched off;
+  - the SDK has no Payouts or webhook-verification calls, so those use the REST API.
+
+  See [docs/decisions.md](docs/decisions.md) D51 and the comments in `src/paypal/orders.ts`.
 - **AG Grid:** the plan and payout tables use AG Grid Community with a custom `themeQuartz` theme matching the road-sign design system, wrapped text for the multilingual notes, and a card layout on phones (`src/ui/PlanGrid.tsx`).
-- **Render:** deployed from the `render.yaml` blueprint with a health check; replay mode means it runs with no AI key. [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OR-6/firstlight)
+- **Render:** deployed from the `render.yaml` blueprint with a readiness check (`/api/health` opens the database and reports what the instance can do). The Deploy button above creates your own copy: it runs in replay mode with no keys; add `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYEES_JSON` to send sandbox payouts, `PAYPAL_WEBHOOK_ID` for webhooks, and `APP_BASE_URL` if you use a custom domain.
 - **Postman:** [`docs/postman/firstlight.postman_collection.json`](docs/postman/firstlight.postman_collection.json) has every public endpoint in the order a judge would try them, MCP calls included. Import it, keep `baseUrl` as the hosted demo, and run top to bottom.
 
 ## Judge access

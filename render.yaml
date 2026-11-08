@@ -16,7 +16,7 @@ services:
       - key: PAYPAL_ENV
         value: sandbox
       - key: DEMO_MODE
-        value: replay # recorded Claude runs; no Anthropic key needed on the server
+        value: replay # recorded AI agent runs; no LLM key needed on the server
       # Free instances have no persistent disk: the demo database resets on restart or deploy.
       - key: FIRSTLIGHT_DB
         value: /tmp/firstlight.db
