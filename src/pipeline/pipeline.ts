@@ -6,7 +6,7 @@ import type { FirewallConfig, FirewallContext, Verdict } from '../firewall/types
 import { canonicalJson, sha256Hex } from '../lib/canonical';
 import { AuditLog, type AuditEntry } from '../ledger/audit';
 import { instanceId, type Db } from '../ledger/db';
-import { Ledger, type BatchRow } from '../ledger/ledger';
+import { Ledger, type BatchRow, type ItemStatusUpdate } from '../ledger/ledger';
 import type { LlmClient } from '../llm/client';
 import { PayPalApiError, type PayPalClient } from '../paypal/client';
 import { TERMINAL_BATCH_STATUSES, buildPayoutBatchBody, cancelPayoutItem, createPayoutBatch, getPayoutBatch } from '../paypal/payouts';
@@ -41,7 +41,43 @@ export type PipelineDeps = {
   sentinelModel?: string;
   /** Notified after every audit entry (live dashboard). */
   onAudit?: (entry: AuditEntry) => void;
+  /** How PayPal idempotency keys are scoped; defaults to `idempotencyScopeFromEnv()`. */
+  idempotency?: IdempotencyScope;
 };
+
+/**
+ * How the payout batch's PayPal-Request-Id and sender_batch_id are derived (D9x).
+ *
+ *  - `database` (the resettable demo): both mix in the database's random instance id
+ *    (`meta.instance_id`). The hosted demo's database lives in /tmp and is reset on
+ *    restart or by "Reset demo"; without the instance id, the same replayed quake would
+ *    produce the same keys and PayPal would answer the new run with the old batch.
+ *  - `verdict` (any deployment that is not a resettable demo): both come from the
+ *    firewall's `paypalRequestId` alone, which hashes only the event, the recipients and
+ *    the amounts. Losing or restoring the database then cannot produce fresh keys for
+ *    the same money: PayPal answers a repeated PayPal-Request-Id with the original
+ *    batch, and refuses a sender_batch_id used in the last 30 days, so a payout is not
+ *    sent twice even if our own record of it is gone.
+ *
+ * Within one database both scopes give the same answer to the same question: the
+ * ledger's UNIQUE constraints and the stored request id stop a second batch either way.
+ */
+export type IdempotencyScope = 'database' | 'verdict';
+
+/**
+ * `FIRSTLIGHT_RESETTABLE_DEMO=true|false` decides; unset, it is true when `DEMO_MODE`
+ * is `replay` or unset (the hosted demo) and false otherwise.
+ */
+export function idempotencyScopeFromEnv(env: Readonly<Record<string, string | undefined>> = process.env): IdempotencyScope {
+  const flag = env.FIRSTLIGHT_RESETTABLE_DEMO?.trim().toLowerCase();
+  const resettable =
+    flag === 'true' || flag === '1' || flag === 'yes'
+      ? true
+      : flag === 'false' || flag === '0' || flag === 'no'
+        ? false
+        : !env.DEMO_MODE || env.DEMO_MODE === 'replay';
+  return resettable ? 'database' : 'verdict';
+}
 
 export type AssessInput = { event: SeismicEvent; corroboration: CorroborationReport; untrusted: readonly UntrustedText[] };
 
@@ -80,12 +116,18 @@ export class Pipeline {
   readonly events: EventStore;
   private readonly clock: () => number;
   private readonly cancelling = new Set<string>();
+  /** execute() calls in flight, by verdict digest: a second caller joins the first. */
+  private readonly executing = new Map<string, Promise<BatchRow>>();
+  /** Status regressions already audited (batch:recipient:from>to), so polling doesn't repeat them. */
+  private readonly regressionsSeen = new Set<string>();
+  private readonly idempotency: IdempotencyScope;
 
   constructor(private readonly deps: PipelineDeps) {
     this.clock = deps.clock ?? Date.now;
     this.ledger = new Ledger(deps.db, this.clock);
     this.audit = new AuditLog(deps.db, this.clock, deps.onAudit);
     this.events = new EventStore(deps.db);
+    this.idempotency = deps.idempotency ?? idempotencyScopeFromEnv();
   }
 
   // ── assess ────────────────────────────────────────────────────────────────
@@ -212,6 +254,22 @@ export class Pipeline {
     }
     if (!this.audit.hasVerdict(verdict.digest)) throw new PipelineError('NOT_AUDITED', 'verdict missing from audit log (R11)');
 
+    // Two clicks, a retry and the poller can ask for the same money at once. In this
+    // process the second caller waits for the first and gets the same batch; across
+    // processes the ledger's UNIQUE constraints and the shared PayPal-Request-Id hold.
+    const inflight = this.executing.get(verdict.digest);
+    if (inflight) return inflight;
+    const run = this.submit(planId, plan, verdict, paypal, payees, opts);
+    this.executing.set(verdict.digest, run);
+    try {
+      return await run;
+    } finally {
+      this.executing.delete(verdict.digest);
+    }
+  }
+
+  private async submit(planId: number, plan: PlanRow, verdict: Verdict, paypal: PayPalClient, payees: PayeeMap, opts: { reporting?: PayPalReporting | null }): Promise<BatchRow> {
+    if (plan.raw_plan === null) throw new PipelineError('NO_VERDICT', `plan ${planId} has no verdict`);
     const existing = this.ledger.getBatchByDigest(verdict.digest);
     // RESERVED means we never heard back (crash or throw before PayPal answered); resend
     // with the stored PayPal-Request-Id, which PayPal de-duplicates.
@@ -253,8 +311,7 @@ export class Pipeline {
         ({ batchId } = this.ledger.reservePayoutBatch({
           eventId: plan.event_id,
           planVersion: plan.version,
-          // Same money → same key within this database; a fresh database (demo reset) gets fresh keys.
-          paypalRequestId: sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), firewall: verdict.paypalRequestId })),
+          paypalRequestId: this.payoutRequestId(verdict),
           verdictDigest: verdict.digest,
           items: items.map((i) => ({ recipientId: i.recipientId, amountCents: i.amountCents })),
         }));
@@ -274,7 +331,7 @@ export class Pipeline {
 
     const items = payable;
     const body = buildPayoutBatchBody({
-      senderBatchId: `firstlight-${plan.event_id}-v${plan.version}-${instanceId(this.deps.db).slice(0, 8)}`,
+      senderBatchId: this.senderBatchId(batch),
       emailSubject: 'Emergency relief payment (SANDBOX)',
       emailMessage: 'This is an automatic relief payment from the Firstlight sandbox demo. No real money moves.',
       items: items.map((i) => ({
@@ -297,7 +354,10 @@ export class Pipeline {
       });
     } catch (err) {
       // On a resend, the first attempt's outcome is still unknown, so no error is definitive.
-      const definitive = !resend && err instanceof PayPalApiError && err.status >= 400 && err.status < 500 && err.status !== 409 && err.status !== 429;
+      // Nor is PayPal saying it already has this batch (a sender_batch_id or request id used
+      // before, e.g. after the database was lost): that money may have left, so it stays reserved.
+      const duplicate = err instanceof PayPalApiError && /DUPLICATE|ALREADY_USED/i.test(err.paypalName ?? '');
+      const definitive = !resend && !duplicate && err instanceof PayPalApiError && err.status >= 400 && err.status < 500 && err.status !== 409 && err.status !== 429;
       if (definitive) {
         for (const i of items) this.ledger.setItemStatus(plan.event_id, i.recipientId, 'FAILED');
         this.ledger.setBatchStatus(batch.id, 'FAILED');
@@ -309,6 +369,7 @@ export class Pipeline {
         planId,
         batchId: batch.id,
         definitive,
+        ...(duplicate ? { duplicateAtPayPal: true } : {}),
         message: (err as Error).message,
         debugId: err instanceof PayPalApiError ? err.debugId : null,
       });
@@ -324,18 +385,44 @@ export class Pipeline {
     if (!batch?.paypal_batch_id) throw new PipelineError('NOT_SUBMITTED', `batch ${batchId} has no PayPal batch id`);
     const { body } = await getPayoutBatch(paypal, batch.paypal_batch_id);
     const changes: { recipientId: string; from: string; to: string; unknown: boolean }[] = [];
+    const regressions: { recipientId: string; stored: string; reported: string; raw: string; unknown: boolean }[] = [];
     const current = new Map(this.ledger.batchItems(batchId).map((r) => [r.recipient_id, r.status]));
     for (const it of body.items ?? []) {
       const sid = it.payout_item.sender_item_id ?? '';
       const [eventId, recipientId] = sid.split(':');
       if (eventId !== batch.event_id || !recipientId || !current.has(recipientId)) continue;
       const norm = this.ledger.setItemStatus(eventId, recipientId, it.transaction_status);
+      if (!norm.applied) {
+        // A stale or out-of-order answer: keep what we have, and say so once per process.
+        const key = `${batchId}:${recipientId}:${norm.from}>${norm.reported}`;
+        if (!this.regressionsSeen.has(key)) {
+          this.regressionsSeen.add(key);
+          regressions.push({ recipientId, stored: norm.from, reported: norm.reported, raw: String(it.transaction_status ?? '').slice(0, 40), unknown: norm.unknown });
+        }
+        continue; // PayPal's ids and error name in a stale answer are stale too
+      }
       this.ledger.setItemDetails(eventId, recipientId, { paypalItemId: it.payout_item_id, transactionId: it.transaction_id, errorName: it.errors?.name ?? null });
       if (current.get(recipientId) !== norm.status) changes.push({ recipientId, from: current.get(recipientId)!, to: norm.status, unknown: norm.unknown });
+      if (norm.bookedCents < 0) this.auditRedebit(batchId, recipientId, norm);
     }
-    const status = body.batch_header.batch_status;
+    const reportedBatch = body.batch_header.batch_status;
     // Re-read after the await: the poller and webhooks can poll the same batch concurrently.
     const before = this.ledger.getBatch(batchId)!.status;
+    // A finished batch doesn't go back to PENDING or PROCESSING either.
+    const isTerminal = (s: string) => (TERMINAL_BATCH_STATUSES as readonly string[]).includes(s);
+    const staleBatch = isTerminal(before) && !isTerminal(reportedBatch);
+    const status = staleBatch ? before : reportedBatch;
+    const batchKey = `${batchId}:batch:${before}>${reportedBatch}`;
+    const auditBatch = staleBatch && !this.regressionsSeen.has(batchKey);
+    if (auditBatch) this.regressionsSeen.add(batchKey);
+    if (regressions.length > 0 || auditBatch) {
+      this.audit.append('paypal.payout.status_regression_ignored', {
+        batchId,
+        paypalBatchId: batch.paypal_batch_id,
+        ...(auditBatch ? { batch: { stored: before, reported: String(reportedBatch).slice(0, 40) } } : {}),
+        items: regressions,
+      });
+    }
     if (status !== before) this.ledger.setBatchStatus(batchId, status);
     if (changes.length > 0 || status !== before) {
       this.audit.append('paypal.payout.status', { batchId, paypalBatchId: batch.paypal_batch_id, batchStatus: status, changes });
@@ -359,7 +446,7 @@ export class Pipeline {
       }
     }
     const items = this.ledger.batchItems(batchId).map((r) => ({ recipientId: r.recipient_id, status: r.status }));
-    const terminal = (TERMINAL_BATCH_STATUSES as readonly string[]).includes(status) && items.every((i) => i.status !== 'PENDING' && i.status !== 'RESERVED');
+    const terminal = isTerminal(status) && items.every((i) => i.status !== 'PENDING' && i.status !== 'RESERVED');
     return { batch: this.ledger.getBatch(batchId)!, terminal, items };
   }
 
@@ -406,6 +493,7 @@ export class Pipeline {
         transactionId: res.body.transaction_id,
         errorName: res.body.errors?.name ?? null,
       });
+      if (norm.bookedCents < 0) this.auditRedebit(batchId, recipientId, norm);
       this.audit.append('paypal.payout.item.canceled', {
         batchId,
         paypalBatchId: batch.paypal_batch_id,
@@ -416,6 +504,8 @@ export class Pipeline {
         to: norm.status,
         transactionStatus: res.body.transaction_status ?? null,
         unknownStatus: norm.unknown,
+        // PayPal answered with a status the item can't move to from UNCLAIMED: nothing was booked.
+        ...(norm.applied ? {} : { regressionIgnored: true, reported: norm.reported }),
         debugId: res.debugId,
       });
       return { recipientId, status: norm.status, paypalItemId: item.paypal_item_id };
@@ -499,6 +589,39 @@ export class Pipeline {
       items: verdict.items.map((i) => ({ recipientId: i.recipientId, verdict: i.verdict, amountCents: i.amountCents, rules: i.ruleTrace.filter((r) => r.scope === 'item') })),
     });
     return { planId, verdict };
+  }
+
+  /** An item's money left the pool again after it had been credited back (see Ledger.setItemStatus). */
+  private auditRedebit(batchId: number, recipientId: string, u: ItemStatusUpdate): void {
+    this.audit.append('payout.item_redebited', {
+      batchId,
+      recipientId,
+      from: u.from,
+      to: u.status,
+      cents: -u.bookedCents,
+      poolBalanceCents: u.balanceAfterCents,
+      ...(u.balanceAfterCents < 0 ? { flag: 'POOL_NEGATIVE' } : {}),
+    });
+  }
+
+  /** PayPal-Request-Id for a new batch: same money → same key (scope: see IdempotencyScope). */
+  private payoutRequestId(verdict: Verdict): string {
+    if (this.idempotency === 'verdict') {
+      if (!verdict.paypalRequestId) throw new PipelineError('NO_VERDICT', 'verdict has nothing payable');
+      return verdict.paypalRequestId;
+    }
+    return sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), firewall: verdict.paypalRequestId }));
+  }
+
+  /**
+   * sender_batch_id, which PayPal refuses to reuse for 30 days. Built from the stored
+   * batch (not the plan being executed) so a resend through another plan version with
+   * the same verdict sends the same id as the first attempt.
+   */
+  private senderBatchId(batch: BatchRow): string {
+    // In verdict scope the stored request id is the firewall's paypalRequestId itself.
+    if (this.idempotency === 'verdict') return `firstlight-${batch.event_id}-${batch.paypal_request_id.slice(0, 32)}`;
+    return `firstlight-${batch.event_id}-v${batch.plan_version}-${instanceId(this.deps.db).slice(0, 8)}`;
   }
 
   private planRow(planId: number): PlanRow | undefined {

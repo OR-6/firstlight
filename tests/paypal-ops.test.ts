@@ -245,6 +245,26 @@ describe('cancel an UNCLAIMED payout item', () => {
     expect(pipeline.audit.entries().map((e) => e.type)).toContain('paypal.payout.item.cancel_failed');
     expect(pp.calls.some((c) => c.method === 'GET' && c.path === '/v1/payments/payouts/PB000001')).toBe(true);
   });
+
+  it('a cancel answer that would move the item backwards books nothing and says so', async () => {
+    const { pipeline, batchId } = unclaimedSetup();
+    const pp = cancelStub({ status: 200, body: { payout_item_id: 'ITEMUNCLAIMED1', transaction_status: 'PENDING' } });
+    const out = await pipeline.cancelItem(batchId, 'rcp_01', pp.client);
+    expect(out.status).toBe('UNCLAIMED');
+    expect(pipeline.ledger.poolBalanceCents()).toBe(880_00);
+    expect(pipeline.audit.entries().at(-1)!.payload).toMatchObject({ from: 'UNCLAIMED', to: 'UNCLAIMED', regressionIgnored: true, reported: 'PENDING' });
+  });
+
+  it('after RETURNED, a stale UNCLAIMED poll neither re-opens Cancel nor touches the pool', async () => {
+    const { pipeline, batchId } = unclaimedSetup();
+    const pp = cancelStub({ status: 200, body: { payout_item_id: 'ITEMUNCLAIMED1', transaction_status: 'RETURNED' } });
+    await pipeline.cancelItem(batchId, 'rcp_01', pp.client);
+    await pipeline.poll(batchId, pp.client); // the stub's GET still says UNCLAIMED
+    expect(pipeline.ledger.batchItems(batchId)[0]?.status).toBe('RETURNED');
+    expect(pipeline.ledger.poolBalanceCents()).toBe(1_000_00);
+    expect(pipeline.audit.entries().at(-1)).toMatchObject({ type: 'paypal.payout.status_regression_ignored' });
+    await expect(pipeline.cancelItem(batchId, 'rcp_01', pp.client)).rejects.toMatchObject({ code: 'NOT_UNCLAIMED' });
+  });
 });
 
 // ── reconciliation ───────────────────────────────────────────────────────────

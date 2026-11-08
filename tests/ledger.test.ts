@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluatePlan, payableItems } from '../src/firewall/engine';
+import { AuditLog, GENESIS_HASH } from '../src/ledger/audit';
 import { openDb } from '../src/ledger/db';
 import { InsufficientPoolError, Ledger, normaliseItemStatus } from '../src/ledger/ledger';
 import { EventStore } from '../src/signals/event-store';
@@ -110,5 +111,16 @@ describe('pool ledger', () => {
     const v2 = evaluatePlan(plan(CLEAN_ITEMS), onlyPlanned(ctx({ event: toFirewallEvent(ev.value), ledger: snap }), CLEAN_ITEMS));
     expect(v2.overall).toBe('BLOCK');
     expect(v2.items.flatMap((i) => i.ruleTrace.map((r) => r.reasonCode))).toContain('ALREADY_PAID_FOR_EVENT');
+  });
+});
+
+describe('audit anchor', () => {
+  it('reports the head hash and entry count, matching a full verify', () => {
+    const audit = new AuditLog(openDb(), () => NOW);
+    expect(audit.anchor()).toEqual({ count: 0, headHash: GENESIS_HASH });
+    audit.append('a', { n: 1 });
+    const last = audit.append('b', { n: 2 });
+    expect(audit.anchor()).toEqual({ count: 2, headHash: last.hash });
+    expect(audit.verify()).toEqual({ ok: true, count: 2, headHash: last.hash });
   });
 });
