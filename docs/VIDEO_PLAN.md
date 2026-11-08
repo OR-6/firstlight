@@ -6,7 +6,7 @@ The video is built from footage of the real app and your voiceover (script in [V
 
 | Rule (Devpost) | How |
 |---|---|
-| Under 3:00 | Target 2:35; the script is timed at 150 words a minute |
+| Under 3:00 | Target about 2:38; the script is timed at 150 words a minute |
 | Shows the project running | Every scene is real footage of the hosted app, recorded from Chrome as it runs: clicks, live status changes, real PayPal sandbox pages. No mock-ups |
 | Public on YouTube, plays when logged out | Upload as **Public**, then open it in a private window |
 | No copyrighted music or material | No music. Map tiles are OpenStreetMap (credit in the end card). PayPal sandbox pages appear because the product uses PayPal |
@@ -23,7 +23,7 @@ Video tips from the organisers apply: open with the problem and who it's for, cu
   - Motion clips: `--record <ms>` saves real frames plus their timestamps, so a clip plays back at the speed it actually happened.
 - **Edit and render:** [Remotion](https://www.remotion.dev) in a separate `video/` folder (not part of the app build). It ships its own ffmpeg, so nothing else needs installing. Each scene is a React component: footage, slow zooms onto the part being talked about, a highlight box, captions.
 - **Audio:** your seven voice files, normalised to −16 LUFS, light noise reduction from your `room_tone.wav`, 150 ms fades. Room tone fills the gaps. No music.
-- **Captions:** burned in (large, black on the road-sign yellow plate, bottom left), plus an `.srt` file uploaded to YouTube. They are timed from the script against each voice file's length; any line that's off gets fixed by hand.
+- **Captions:** burned in (large, white on a black plate, bottom left; never on yellow, which in the product means "needs approval"), plus an `.srt` file uploaded to YouTube. They are timed from the script against each voice file's length; any line that's off gets fixed by hand.
 - **Look:** the product's own design system (DESIGN.md): Overpass, guide-sign green, warning yellow, black. Title and end cards use the green sign board from the app. No gradients, no stock footage, no whooshes.
 
 ## Before capturing (on the day)
@@ -39,13 +39,13 @@ Times match the voiceover blocks. "Still" = screenshot; "Clip" = recorded motion
 
 | # | Time | Voice | Shots | On screen |
 |---|---|---|---|---|
-| 1 | 0:00–0:12 | vo_01 | **Still** `/how-it-works` (enrolment section). **Still** `/`, zoomed on the map: Chitré marker, epicentre, rings | Title card: "Firstlight / Earthquake relief cash in minutes, no application needed" (2 s). Slow push-in from Panama to the Chitré marker. Lower third: "Household 04, Chitré · enrolled August 2026" |
-| 2 | 0:12–0:35 | vo_02 | **Clip** `/` after reset, clicking **Run assessment** (`--record 12000`). **Still** of the event card ("EMSC agrees") | The money's-path board lights stage by stage (real recording). Zoom onto "USGS and EMSC agree", then the agent summary line "7 of 8 households in the plan" |
-| 3 | 0:35–1:00 | vo_03 | **Still** the rule drawer for household 04 (click its row/card). **Still** the "Message PayPal sends" box | Highlight box walks down the checks: enrolled before the quake, tier by distance +1 for mobility, amount from the table, nobody left out. Then the fixed Spanish note, subtitled in English. Callout: "The agent's draft is never sent" |
-| 4 | 1:00–1:30 | vo_04 | **Clip** Approve form → **Send $680.00 in payouts** → Payouts page until items show SUCCESS (`--record 45000`, cut down to about 8 s with a "+30 s" timer chip). **Still** (taken after you log in) the sandbox personal account's activity showing the payment and the Spanish note. **Still** Audit → **Verify chain** ("Chain intact") | Split screen: Payouts statuses on the left, the recipient's PayPal sandbox account on the right. A small timer counts up from 0 s to show the real ~30 s |
-| 5 | 1:30–2:00 | vo_05 | **Clip** `/redteam` → Compromised agent (`--record 6000`). **Still** the full suite: "27 of 27 attacks moved $0.00". **Still** the residual-risks table | Big number: "$0.00 reached anyone not entitled to it". Zoom into the "What the firewall caught" list. Then the residual table with the "Insider swaps a payee address: Not stopped" row highlighted in red |
-| 6 | 2:00–2:22 | vo_06 | **Clip** `/agents`: create an allowance ("Samaritan", $5, 24 h) and the token appears. Terminal output of `npm run samaritan` against the hosted site (shown as a crisp terminal still). **Still** (after you log in) the PayPal sandbox approval page. **Still** the receipt with "Verified" | Three-beat sequence: person sets allowance → agent donates over MCP → person approves on PayPal → "Verified: audit entry N in an intact chain" |
-| 7 | 2:22–2:35 | vo_07 | (cards only) | End card on the green sign board: tagline, "The model proposes; the code disposes", firstlight.onrender.com, github.com/OR-6/firstlight, "PayPal sandbox: no real money moves", "Map data © OpenStreetMap contributors" |
+| 1 | 0:00–0:16 | vo_01 | **Still** `/` zoomed on the map (epicentre, rings, households). **Still** the Chitré household card on a phone-width capture showing "mobility impaired" | Title card (2 s): "Firstlight / Earthquake relief cash in minutes, no application needed / Claude agent + PayPal Payouts". Slow push-in on the map. Lower third: "Early cash: 36% less likely to go a day without eating (WFP, Bangladesh 2020)" |
+| 2 | 0:16–0:38 | vo_02 | **Clip** `/` after reset, clicking **Run assessment** (`--record 12000`). **Still** the event card ("EMSC agrees"). **Still** the How it works rules sentence (pre-agreed trigger and payment rules) | Lower third: "Synthetic test household, PayPal sandbox". The board lights stage by stage (real recording). Zoom onto "USGS and EMSC agree", then the agent summary line "7 of 8 households in the plan" |
+| 3 | 0:38–1:00 | vo_03 | **Still** the rule drawer for the Chitré household. **Still** the "Message PayPal sends" box. **Still** from a residual run: an R12 warning naming a left-out household and its dollar shortfall | Highlight box walks the checks: enrolled before the quake, tier by distance +1 uplift, amount from the table, nobody left out. 2 s cut to the R12 warning "would get $X less". Then the fixed Spanish note, subtitled. Callout: "The agent's draft is never sent" |
+| 4 | 1:00–1:28 | vo_04 | **Clip** Approve form → **Send $680.00 in payouts** → Payouts until items show SUCCESS (`--record 45000`, cut to ~8 s with a "+25 s" timer chip). **Still** Audit showing the `paypal.webhook` entries. **Still** (taken after you log in) the sandbox personal account's activity with the payment and the Spanish note | Split screen: Payouts on the left, the recipient's PayPal account on the right, the **same PayPal batch or transaction id highlighted on both**. Timer counts 0 → ~25 s |
+| 5 | 1:28–1:58 | vo_05 | **Still** the compromised agent's raw plan JSON (attacker email, rcp_99, every tier A) next to its verdict. **Clip** `/redteam` → Compromised agent (`--record 6000`). **Still** the residual table | Big number: "$0.00 reached anyone not entitled to it". Then the residual table: highlight "Pay everyone the minimum: needs a person, $400 shortfall" and the red "Insider swaps a payee address: Not stopped" row |
+| 6 | 1:58–2:16 | vo_06 | **Clip** `/agents`: create an allowance ("Claude Code", $5, 24 h). **Clip** a real Claude Code session with Firstlight added (`claude mcp add --transport http firstlight …`): asked to give $50, it gets `ALLOWANCE_EXCEEDED`; then $5 goes through. **Still** (after you log in) the PayPal sandbox approval page. **Still** the receipt "Verified", with its capture id next to the same id in the buyer's PayPal activity | Four quick beats: allowance, refusal over the cap, PayPal approval, verified receipt |
+| 7 | 2:16–2:38 | vo_07 | **Still** terminal: `npm test` (all passed). Cards only after that | End slate with three big numbers: "$680, 7 households, ~25 s" and "27 attacks, $0 redirected". Then the green sign board: "The model proposes; the code disposes", firstlight.onrender.com, github.com/OR-6/firstlight, "PayPal sandbox: no real money moves", "Map data © OpenStreetMap contributors" |
 
 Clicks used in the captures (passed with `--js`):
 
@@ -61,7 +61,7 @@ The approve form needs a name and a reason typed in, so that clip sets the field
 
 ## Edit, step by step (Claude)
 
-1. Capture every still and clip above into `video/public/` and check each one by eye. Retake anything with a loading state or a cold-start delay.
+1. Capture the two PayPal stills first (recipient account, buyer approval), since they need your log-in and are the biggest risk on the day. Then capture every other still and clip into `video/public/` and check each one by eye. Retake anything with a loading state or a cold-start delay.
 2. Scaffold Remotion in `video/` with one composition, `Firstlight`, at 1920×1080, 30 fps. Each scene is a `<Sequence>` whose length is its voice file's length plus a 0.3 s breath.
 3. Build the scenes: stills with slow, eased zooms (no more than 1.15×, `Easing.bezier(0.4, 0, 0.2, 1)`), clips played from their timestamps, a highlight box and callout per scene, 8-frame cuts between scenes (no wipes or spins).
 4. Lay in the voice files, mix as above, and build captions from the script timed to each file.
@@ -77,6 +77,7 @@ The approve form needs a name and a reason typed in, so that clip sets the field
 - `vo_01.wav` … `vo_07.wav` and `room_tone.wav`.
 - Your OK for the $680 sandbox payout and the $5 sandbox donation on the day of capture.
 - Be at the keyboard for the two PayPal log-ins (recipient account, buyer account).
+- For scene 6, Claude Code with Firstlight added as an MCP server (Claude runs it; you approve the $5 order on PayPal).
 
 ## Upload
 

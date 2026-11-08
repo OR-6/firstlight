@@ -1,6 +1,6 @@
 # Voiceover script
 
-About 385 words, so roughly 2:35 at a calm pace (150 words a minute). The edit is built around this script, so read it as written. A word swap here and there is fine. Each block is one file.
+About 390 words, so roughly 2:38 at a calm pace (150 words a minute). The edit is built around this script, so read it as written. A word swap here and there is fine. Each block is one file.
 
 ## How to record
 
@@ -15,30 +15,30 @@ About 385 words, so roughly 2:35 at a calm pace (150 words a minute). The edit i
   - Numbers: say "six hundred and eighty dollars", "twenty-seven".
 - **Room tone:** record 5 seconds of silence in the same room as `room_tone.wav`. It's used to smooth the cuts.
 
-## vo_01: Opening (0:00–0:12, about 30 words)
+## vo_01: The problem (0:00–0:16, about 45 words)
 
-This is household 04 in Chitré, Panama. In August a local aid partner enrolled them: their home, their language, and that someone there has limited mobility. Then, on the ninth of October, a magnitude seven point seven earthquake hit.
+After an earthquake, relief cash usually takes weeks and an application form. Early cash works: families paid before a flood peak were a third less likely to go hungry. Firstlight is for aid organisations that enrol families before a disaster, so nobody has to apply after one.
 
-## vo_02: Confirmed, assessed (0:12–0:35, about 60 words)
+## vo_02: One household, one quake (0:16–0:38, about 55 words)
 
-They don't have to apply for anything. Firstlight sees two seismic agencies, USGS and EMSC, agree on the quake. A Claude agent reads their reports and drafts who should get what: seven enrolled households, a tier by distance from the epicentre, and one tier up for household 04. Everyone it plans for is someone the aid partner already knows.
+Take this household in Chitré, Panama: an older woman with limited mobility, enrolled in August by a local partner. On the ninth of October a magnitude seven point seven earthquake hits. Two seismic agencies agree on it, and a Claude agent drafts payouts for the seven enrolled households nearby, using rules the programme agreed before the quake.
 
-## vo_03: The firewall (0:35–1:00, about 65 words)
+## vo_03: The firewall (0:38–1:00, about 60 words)
 
-But the agent never touches the money. Its output has no field for an amount or a payee. A deterministic firewall recomputes every amount, checks the household was enrolled before the quake, checks that nobody eligible was left out, and shows its working. Even the message is fixed: household 04 gets a note in Spanish that the agent can't change, so a hijacked agent can't phish anyone.
+But the agent never touches the money. Its output has no field for an amount or a payee. A deterministic firewall recomputes every amount, checks each household was enrolled before the quake, and flags anyone eligible who was left out or paid less, so a person decides. Even the message is fixed: she gets a note in Spanish the agent can't change.
 
-## vo_04: Approve and pay (1:00–1:30, about 60 words)
+## vo_04: Approve and pay (1:00–1:28, about 60 words)
 
-Six hundred and eighty dollars is over the limit that can go out without review, so a person approves it. One click, and PayPal Payouts sends the batch. About thirty seconds later every payment has landed. Here it is in a sandbox account, with the note in Spanish. Every step is written to a hash-chained audit log anyone can verify.
+Six hundred and eighty dollars is over the limit that can go out without review, so a person approves it. PayPal Payouts sends the batch, and if the network drops, it's resent under the same request id, so nobody is paid twice. About twenty-five seconds later the money is in her PayPal account. Turning it into cash nearby is the field partner's job.
 
-## vo_05: Attack it (1:30–2:00, about 70 words)
+## vo_05: Attack it (1:28–1:58, about 65 words)
 
-Now we attack it. We replace the agent with one that obeys every injected instruction: pay a stranger, invent a recipient, raise every tier. Zero dollars reach anyone not owed, across twenty-seven attacks. We also show what a hijacked agent can still try, like paying people less, which goes to a person. And the one thing Firstlight doesn't stop: an insider changing a payee's address. We say so, on the page.
+Now we attack it. We swap the agent for one we scripted to obey every injected instruction: pay a stranger, invent a recipient, raise every tier. Across twenty-seven attacks, zero dollars reach anyone not owed. And we show what it can still try. Paying everyone less goes to a person, with the shortfall in dollars. An insider changing a payee's address isn't stopped. We say so.
 
-## vo_06: Other agents give (2:00–2:22, about 55 words)
+## vo_06: Other agents give (1:58–2:16, about 40 words)
 
-Other AI agents can fund the pool too, but only within an allowance a person set: who the agent is, how much, until when. The agent donates over MCP, a person approves the payment on PayPal, and the agent checks its receipt against the audit log itself. Real permission from a real person, enforced by the server.
+Other AI agents can give too. A person sets an allowance: who the agent is, how much, until when. The server enforces it. The agent donates over MCP, a person approves the payment on PayPal Checkout, and the receipt checks out against the audit log.
 
-## vo_07: Close (2:22–2:35, about 25 words)
+## vo_07: Close (2:16–2:38, about 40 words)
 
-Firstlight. Earthquake relief cash in minutes, no application needed. The model proposes; the code disposes. Built with Claude and PayPal, and live in the sandbox today.
+Firstlight. Earthquake relief cash in minutes, for cash programmes that already enrol households. Six hundred and eighty dollars to seven households in twenty-five seconds, and twenty-seven attacks that moved nothing. The model proposes; the code disposes. Built with Claude and PayPal Payouts, Orders and webhooks.

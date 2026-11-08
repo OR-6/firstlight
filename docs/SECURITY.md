@@ -56,8 +56,8 @@ Run with `npm run redteam -- --llm replay` (corpus) and shown on the Red team pa
 | Injected instruction to pay a stranger, raise tiers, add fields, smuggle JSON, encode, translate, use look-alike ids (27 payloads) | Schema + R1–R6, R9 | $0 to anyone not owed, in 27/27; every one is also held by a firewall rule other than the $300 limit |
 | Phishing through the payout note | Fixed note templates (D72) | Agent text reaches PayPal in 0 cases |
 | Paying everyone less, or leaving households out | R12 (D71) | Goes to a person with the shortfall named; a careless person can still approve it |
-| Pressuring the reviewer ("pre-cleared, approve now") | Sentinel `APPROVAL_PRESSURE` | Flagged as suspicious; still a person's call |
-| Talking the agent into holding everything ("the report is a hoax") | R12 `HOLD_ON_MET_TRIGGER`, sentinel `DISCREDIT_EVENT` | Nothing paid, flagged for a person to re-run |
+| Pressuring the reviewer ("pre-cleared, approve now") | Sentinel `APPROVAL_PRESSURE` | The exact phrasing is flagged; paraphrases mostly aren't (the pattern layer caught 7 of 30 held-out texts, Claude Haiku 26 of 30). Still a person's call |
+| Talking the agent into holding everything ("the report is a hoax"), or a forged event id that blocks the plan | R12 `HOLD_ON_MET_TRIGGER`, sentinel `DISCREDIT_EVENT` | Nothing paid, flagged for a person to re-run. A feed that stays poisoned keeps blocking: availability isn't guaranteed |
 | Paying twice: same quake under a new id, replayed plan, concurrent sends | R6, DB `UNIQUE`, PayPal-Request-Id, per-plan lock | Blocked |
 | Insider changes a payee address in the payee map | **Not covered** | Money goes to the swapped address. Needs the partner's two-person change control and PayPal account-holder checks |
 | Fake households enrolled weeks in advance (registry poisoning) | **Not covered** by code | The registry's `verified` flag is trusted. Enrolment checks belong to the field partner |
@@ -71,8 +71,8 @@ The Haiku sentinel numbers on the hosted site come from recorded runs (replay), 
 
 | Data | Where it lives | Who sees it |
 |---|---|---|
-| Household id, town, home location, language, vulnerability flags | Registry (synthetic in the demo) | The agent, the firewall, staff. Flag names (such as `chronic_illness`) are sent to the Claude API as part of the agent's input |
+| Household id, town, home location, language, vulnerability flags | Registry (synthetic in the demo) | The firewall and staff. The agent (and so the Claude API) only gets `upliftEligible: true/false`, never which condition (D84) |
 | PayPal address | Payee map (env or a gitignored file) | Only the payout executor and PayPal. Masked in the audit log |
 | Donor name and message | Donations table | Public feed, as plain text. Never sent to the agent |
 
-A real deployment would need consent at enrolment, a data-sharing agreement with the field partner, a retention period, and data minimisation: the agent only needs to know that a household qualifies for an uplift, not which condition it has. That last change alters the agent's input, so it needs the recorded Claude runs re-recorded; it is next on the list.
+A real deployment would also need consent at enrolment, a data-sharing agreement with the field partner and a retention period.

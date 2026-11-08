@@ -177,3 +177,15 @@ Seven judge agents with different backgrounds (PayPal DevRel, humanitarian cash 
 | D79 | MCP contract | Strict input schemas that advertise the enforced limits; output schemas and structuredContent on every tool; snake_case arguments (`get_receipt` also takes `receiptId`); new read-only `get_allowance`; `tools.listChanged: false` on the stateless server. |
 | D80 | Receipts an agent can check itself | The manifest documents the audit hash formula; Samaritan, `scripts/verify-chain.ts` and the /agents page recompute the chain from /api/audit instead of only asking /api/audit/verify. A receipt proves the donation is in the audit log and shows pool totals; it does not prove where each dollar went (the pool is shared). |
 | D81 | Donation lifecycle | Refunds and reversals debit the pool once per PayPal refund id, never more than was credited. A debit that takes the pool below zero is booked and flagged (`POOL_NEGATIVE`) rather than hidden, and no payout can be reserved while it is. PENDING is recorded, not credited. DENIED is never credited (any credit is reversed). CHECKOUT.ORDER.APPROVED captures through the same idempotent path as the return URL, so a donor who closes the tab is still captured. The live sandbox webhook needs these six event types added (`npm run webhook:register` lists the missing ones); until then the return URL and polling cover captures. |
+
+## Judge round 2 (2026-11-08)
+
+Round 2 averaged 77/100 (round 1: 74). These changes answer it.
+
+| # | Question | Decision |
+|---|---|---|
+| D82 | Trigger basis risk | R8 now warns (a person checks) when the magnitude bar is met but PAGER is green or not issued, e.g. a big offshore quake USGS expects to hurt nobody. PAGER yellow or worse with the magnitude, or PAGER orange alone, still passes. |
+| D83 | R12 shows dollars | ELIGIBLE_OMITTED and TIER_BELOW_BAND now state how much less households would get in total, so the reviewer sees the cost of approving. |
+| D84 | Data minimisation and realistic languages | The agent gets `upliftEligible: true/false`, not the flag names (health and care conditions never reach the Claude API). The registry's households speak Spanish (one English); indigenous languages (Ngäbere, Guna) and voice or SMS for low literacy are a known gap. USGS title, place and the corroboration note are wrapped as untrusted text, like the news. The agent's note is now a reviewer draft in English. All of this changed the agent's input, so the recorded Claude Opus 5.5 runs (normal and poisoned news) and the Haiku sentinel runs were re-recorded; 11 orphaned fixtures were deleted. The new normal run files exception requests for the two towns where USGS reports deaths. |
+| D85 | Held-out sentinel set | 30 attack texts in `fixtures/redteam/heldout.json`, written by a separate agent that never saw the patterns. Patterns catch 7/30, Claude Haiku 26/30. Reported next to the corpus numbers so the tuned 22/27 can't be mistaken for general accuracy. |
+| D86 | Aid withheld | The suite now reports attacks that left households with less than owed (1/27: a forged event id blocks the whole plan) and that the 27 payloads are 21 distinct plan mutations. |

@@ -107,19 +107,17 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 
 ---
 
-## 8. Demo video script (about 2:35, hard limit 3:00)
+## 8. Demo video script (about 2:38, hard limit 3:00)
 
-Rules: public on YouTube, under 3 minutes, shows the project running, **no music, no copyrighted material**. Voiceover only (record audio separately, clean it, add captions). Screen-record at 1080p. Warm the Render instance first so there's no cold start in the footage. Avoid showing logos other than the PayPal sandbox screens you need.
+The full production plan is in [docs/VIDEO_PLAN.md](docs/VIDEO_PLAN.md) (shot list, capture commands, edit, upload) and the script to read is in [docs/VOICEOVER.md](docs/VOICEOVER.md). One story:
 
-The full production plan is in [docs/VIDEO_PLAN.md](docs/VIDEO_PLAN.md) (shot list, capture commands, edit, upload) and the script to read is in [docs/VOICEOVER.md](docs/VOICEOVER.md). In short, about 2:35, one story:
-
-1. **0:00** Household 04 in Chitré was enrolled in August; a M7.7 quake hits.
-2. **0:12** Two agencies agree; the Claude agent drafts seven households' payouts.
-3. **0:35** The firewall's working for household 04, and the fixed Spanish note the agent can't change.
-4. **1:00** A person approves $680; PayPal Payouts lands it in about 30 s, shown in a sandbox account.
-5. **1:30** The hijacked-agent attack: $0.00 to anyone not owed. What it can still try, and the one thing we don't stop.
-6. **2:00** An AI agent donates within a person's allowance; a person approves on PayPal; the receipt verifies.
-7. **2:22** "The model proposes; the code disposes."
+1. **0:00** The problem (relief cash takes weeks and a form; early cash works) and who it's for.
+2. **0:16** A synthetic household in Chitré, enrolled in August; the M7.7 quake; two agencies agree; the Claude agent drafts seven payouts under pre-agreed rules.
+3. **0:38** The firewall's working for that household, the R12 shortfall warning, and the fixed Spanish note the agent can't change.
+4. **1:00** A person approves $680; PayPal Payouts lands it in about 25 s; the same batch id on Payouts and in her sandbox account.
+5. **1:28** The scripted hijacked agent: $0.00 to anyone not owed; what it can still try (shortfall shown); the insider swap we don't stop.
+6. **1:58** A real Claude Code session donates over MCP, refused over its allowance, then approved by a person on PayPal; the receipt verifies.
+7. **2:16** "$680, 7 households, ~25 s. 27 attacks, $0 redirected. The model proposes; the code disposes."
 
 ---
 
