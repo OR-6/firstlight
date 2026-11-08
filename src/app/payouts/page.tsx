@@ -7,7 +7,7 @@ import type { Difference, BatchReconciliation } from '@/paypal/reconcile';
 import type { BatchView, ReconcileView } from '@/server/views';
 import { Notice, StatusChip, itemStatus, usd, when, LoadError, Loading } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
-import { SandboxEvidence } from '@/ui/SandboxEvidence';
+import { SandboxEvidence, clockTime, duration } from '@/ui/SandboxEvidence';
 import { gridTheme } from '@/ui/PlanGrid';
 
 type Item = BatchView['items'][number];
@@ -70,6 +70,47 @@ function Reconciled({ r, state }: { r: BatchReconciliation | undefined; state: '
   );
 }
 
+function day(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+/** The batch's end-to-end clock, measured from the audit log's timestamps. */
+function Clock({ c }: { c: BatchView['clock'] }) {
+  if (c.sentMs === null && c.assessedMs === null) return null;
+  const steps: { label: string; at: number | null; note?: string }[] = [
+    ...(c.assessedMs !== null ? [{ label: 'assessed', at: c.assessedMs }] : []),
+    c.approvedMs !== null ? { label: 'approved', at: c.approvedMs } : { label: 'no approval needed', at: null },
+    { label: 'sent to PayPal', at: c.sentMs },
+    c.finishedMs !== null
+      ? { label: c.allPaid ? 'all paid' : 'PayPal finished', at: c.finishedMs, note: c.sentMs !== null ? duration(c.finishedMs - c.sentMs) : undefined }
+      : { label: c.sentMs !== null ? 'waiting for PayPal' : 'not sent yet', at: null },
+  ];
+  return (
+    <div className="border-b border-line-soft px-5 py-3 text-[0.9rem]">
+      <ol className="num flex flex-wrap gap-x-2 gap-y-1 text-ink-muted" aria-label="End-to-end timing">
+        {steps.map((s, n) => (
+          <li key={s.label}>
+            {n === 0 ? s.label[0]!.toUpperCase() + s.label.slice(1) : s.label}
+            {s.at !== null ? (
+              <>
+                {' '}
+                <span className="font-semibold text-ink">{clockTime(s.at)}</span>
+              </>
+            ) : null}
+            {s.note ? <span className="font-semibold text-ink"> ({s.note} after sending)</span> : null}
+            {n < steps.length - 1 ? <span aria-hidden>,</span> : null}
+          </li>
+        ))}
+      </ol>
+      <p className="mt-0.5 text-[0.85rem] text-ink-dim">
+        Measured from the audit log.
+        {c.assessedMs !== null && c.finishedMs !== null ? ` Assessment to money final: ${duration(c.finishedMs - c.assessedMs)}, including the time a person took to approve.` : ''}
+        {c.firstWebhookMs !== null ? ` First verified PayPal webhook at ${clockTime(c.firstWebhookMs)}.` : ''}
+      </p>
+    </div>
+  );
+}
+
 function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconciliation: BatchReconciliation | undefined; reconcileState: 'loading' | 'error' | 'done' }) {
   const { bump } = useLive();
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +143,8 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
       setCancelling(null);
     }
   };
-  const anyCancellable = b.items.some((i) => i.canCancel);
+  const anyCancellable = b.items.some((i) => i.canCancel || i.autoReturnMs !== null);
+  const unclaimed = b.items.filter((i) => i.status === 'UNCLAIMED' && i.autoReturnMs !== null);
   return (
     <section className="panel overflow-hidden" aria-label={`PayPal batch ${b.paypalBatchId ?? b.id}`}>
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-line-soft p-5">
@@ -129,6 +171,11 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
         <p className="num text-[0.9rem] text-ink-muted">
           <span className="font-bold text-ink">{b.verifiedWebhooks}</span> {b.verifiedWebhooks === 1 ? 'webhook' : 'webhooks'} from PayPal, signature verified
         </p>
+        {b.feesCents > 0 ? (
+          <p className="num text-[0.9rem] text-ink-muted">
+            PayPal fees <span className="font-bold text-ink">{usd(b.feesCents)}</span>, paid from the pool
+          </p>
+        ) : null}
         <div className="ml-auto flex items-center gap-3">
           {b.polling ? <span className="text-[0.85rem] text-hold">Checking PayPal every 2 s</span> : null}
           <button className="btn h-8" onClick={refresh} disabled={busy || !b.paypalBatchId}>
@@ -136,9 +183,19 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
           </button>
         </div>
       </div>
+      <Clock c={b.clock} />
       {b.paypalBatchId ? (
         <div className="border-b border-line-soft px-5 py-3">
           <Reconciled r={reconciliation} state={reconcileState} />
+        </div>
+      ) : null}
+      {unclaimed.length > 0 ? (
+        <div className="border-b border-line-soft px-5 py-3">
+          <Notice>
+            {unclaimed.length === 1 ? 'One payout is' : `${unclaimed.length} payouts are`} unclaimed: the household hasn&apos;t accepted the money at PayPal yet. Ask the field
+            partner to contact the household so they can claim it. If nobody does, PayPal returns it to the pool on {day(unclaimed[0]!.autoReturnMs!)}, 30 days after the batch;
+            you can also cancel it now.
+          </Notice>
         </div>
       ) : null}
       {error ? (
@@ -177,13 +234,22 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
             ? [
                 {
                   headerName: 'Return',
-                  width: 170,
+                  width: 330,
                   sortable: false,
                   cellRenderer: (p: { data: Item }) =>
-                    p.data.canCancel ? (
-                      <button className="btn btn-stop h-7 px-2.5 text-[0.85rem]" onClick={() => cancel(p.data)} disabled={cancelling !== null}>
-                        {cancelling === p.data.recipientId ? 'Cancelling…' : 'Cancel payout'}
-                      </button>
+                    p.data.autoReturnMs !== null || p.data.canCancel ? (
+                      <span className="flex items-center gap-2.5">
+                        {p.data.canCancel ? (
+                          <button className="btn btn-stop h-7 px-2.5 text-[0.85rem]" onClick={() => cancel(p.data)} disabled={cancelling !== null}>
+                            {cancelling === p.data.recipientId ? 'Cancelling…' : 'Cancel payout'}
+                          </button>
+                        ) : null}
+                        {p.data.autoReturnMs !== null ? (
+                          <span className="num text-[0.85rem] text-ink-muted">
+                            {p.data.canCancel ? 'or ' : ''}PayPal returns it {day(p.data.autoReturnMs)}
+                          </span>
+                        ) : null}
+                      </span>
                     ) : null,
                 },
               ]

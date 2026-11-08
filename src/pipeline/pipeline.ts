@@ -10,7 +10,7 @@ import { Ledger, type BatchRow } from '../ledger/ledger';
 import type { LlmClient } from '../llm/client';
 import { PayPalApiError, type PayPalClient } from '../paypal/client';
 import { TERMINAL_BATCH_STATUSES, buildPayoutBatchBody, cancelPayoutItem, createPayoutBatch, getPayoutBatch } from '../paypal/payouts';
-import type { PayPalReporting } from '../paypal/reporting';
+import { toCents, type PayPalReporting } from '../paypal/reporting';
 import type { PayeeMap } from '../registry/payees';
 import { toFirewallRegistry, type RegistryProfile } from '../registry/registry';
 import type { CorroborationReport } from '../signals/corroboration';
@@ -327,6 +327,24 @@ export class Pipeline {
     if (status !== before) this.ledger.setBatchStatus(batchId, status);
     if (changes.length > 0 || status !== before) {
       this.audit.append('paypal.payout.status', { batchId, paypalBatchId: batch.paypal_batch_id, batchStatus: status, changes });
+    }
+    // PayPal's fee for the batch comes out of the same PayPal balance as the payouts, so
+    // the pool pays it too (once per batch; a changed total books only the difference).
+    // Batches are USD only; a fee in another currency would show up in reconciliation.
+    const fees = body.batch_header.fees;
+    const feeCents = fees && fees.currency === 'USD' ? toCents(fees.value) : null;
+    if (feeCents !== null && feeCents >= 0) {
+      const fee = this.ledger.bookPayoutFee(batch.paypal_batch_id, feeCents);
+      if (fee.bookedCents !== 0) {
+        this.audit.append('payout.fee_booked', {
+          batchId,
+          paypalBatchId: batch.paypal_batch_id,
+          feeCents: fee.totalFeeCents,
+          bookedCents: fee.bookedCents,
+          poolBalanceCents: fee.balanceAfterCents,
+          ...(fee.balanceAfterCents < 0 ? { flag: 'POOL_NEGATIVE' } : {}),
+        });
+      }
     }
     const items = this.ledger.batchItems(batchId).map((r) => ({ recipientId: r.recipient_id, status: r.status }));
     const terminal = (TERMINAL_BATCH_STATUSES as readonly string[]).includes(status) && items.every((i) => i.status !== 'PENDING' && i.status !== 'RESERVED');

@@ -2,6 +2,8 @@ import 'server-only';
 import type { SentinelReport } from '../agent/sentinel';
 import { paypalConfigured, type PayPalClient } from '../paypal/client';
 import { reconcileBatch, type BatchReconciliation, type LedgerBatchInput } from '../paypal/reconcile';
+import { RecordedBatchChecker, type RecordedView } from '../paypal/recorded';
+import { UNCLAIMED_RETURN_MS, batchClock } from '../paypal/timings';
 import { instanceId } from '../ledger/db';
 import type { BatchRow } from '../ledger/ledger';
 import type { Verdict } from '../firewall/types';
@@ -185,40 +187,56 @@ export function batchesView() {
     plan_id: number | null;
   }[];
   const towns = new Map(rt.registry.map((r) => [r.recipientId, r.town]));
-  const webhooks = verifiedWebhookCounts();
-  return rows.map((b) => ({
-    id: b.id,
-    planId: b.plan_id,
-    eventId: b.event_id,
-    version: b.plan_version,
-    paypalBatchId: b.paypal_batch_id,
-    status: b.status,
-    createdMs: b.created_ms,
-    polling: rt.pollers.has(b.id),
-    /** PayPal webhook deliveries for this batch that passed verify-webhook-signature. */
-    verifiedWebhooks: b.paypal_batch_id ? (webhooks.get(b.paypal_batch_id) ?? 0) : 0,
-    items: rt.pipeline.ledger.batchItems(b.id).map((i) => ({
-      recipientId: i.recipient_id,
-      town: towns.get(i.recipient_id) ?? '',
-      amountCents: i.amount_cents,
-      status: i.status,
-      transactionId: i.transaction_id,
-      errorName: i.error_name,
-      /** PayPal accepts a cancel only for UNCLAIMED items, by payout_item_id. */
-      canCancel: i.status === 'UNCLAIMED' && Boolean(i.paypal_item_id),
-    })),
-  }));
+  const entries = rt.pipeline.audit.entries();
+  return rows.map((b) => {
+    const items = rt.pipeline.ledger.batchItems(b.id);
+    const clock = batchClock(entries, { planId: b.plan_id, batchId: b.id, paypalBatchId: b.paypal_batch_id, recipientIds: items.map((i) => i.recipient_id) });
+    // PayPal returns an unclaimed payout 30 days after the batch; counted from when PayPal accepted it.
+    const returnsMs = (clock.sentMs ?? b.created_ms) + UNCLAIMED_RETURN_MS;
+    return {
+      id: b.id,
+      planId: b.plan_id,
+      eventId: b.event_id,
+      version: b.plan_version,
+      paypalBatchId: b.paypal_batch_id,
+      status: b.status,
+      createdMs: b.created_ms,
+      polling: rt.pollers.has(b.id),
+      /** PayPal webhook deliveries for this batch that passed verify-webhook-signature (rejected ones are logged separately). */
+      verifiedWebhooks: clock.webhooks,
+      /** PayPal's fee for this batch as booked in the pool ledger (0 until PayPal reports one). */
+      feesCents: b.paypal_batch_id ? rt.pipeline.ledger.payoutFeeCents(b.paypal_batch_id) : 0,
+      /** Measured from audit timestamps: assessed → approved → sent to PayPal → all items final. */
+      clock,
+      items: items.map((i) => ({
+        recipientId: i.recipient_id,
+        town: towns.get(i.recipient_id) ?? '',
+        amountCents: i.amount_cents,
+        status: i.status,
+        transactionId: i.transaction_id,
+        errorName: i.error_name,
+        /** PayPal accepts a cancel only for UNCLAIMED items, by payout_item_id. */
+        canCancel: i.status === 'UNCLAIMED' && Boolean(i.paypal_item_id),
+        /** When PayPal sends an UNCLAIMED payout back on its own. */
+        autoReturnMs: i.status === 'UNCLAIMED' ? returnsMs : null,
+      })),
+    };
+  });
 }
 
-/** Verified webhook deliveries per PayPal batch id, from the audit log (rejected ones are logged separately). */
-function verifiedWebhookCounts(): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const e of firstlight().pipeline.audit.entries()) {
-    if (e.type !== 'paypal.webhook') continue;
-    const id = (e.payload as { payoutBatchId?: unknown }).payoutBatchId;
-    if (typeof id === 'string') counts.set(id, (counts.get(id) ?? 0) + 1);
-  }
-  return counts;
+// ── recorded sandbox runs, read back from PayPal ─────────────────────────────
+
+const g = globalThis as unknown as { __firstlightRecorded?: RecordedBatchChecker };
+
+/**
+ * The batches listed under "Runs already made in the PayPal sandbox", as PayPal
+ * reports them now: read-only GETs, cached 10 minutes, at most 8 a minute, one
+ * refresh at a time. Independent of the demo database, so a reset keeps the cache.
+ * Never throws; a PayPal problem is reported per batch.
+ */
+export function recordedBatchesView(): Promise<RecordedView> {
+  g.__firstlightRecorded ??= new RecordedBatchChecker(() => (paypalConfigured() ? firstlight().paypal() : null));
+  return g.__firstlightRecorded.view();
 }
 
 // ── reconciliation with PayPal ───────────────────────────────────────────────
