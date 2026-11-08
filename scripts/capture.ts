@@ -1,7 +1,7 @@
 /**
  * Screenshot pages of Firstlight with the locally installed Google Chrome,
  * driven over the DevTools protocol (no browser download, no extra package).
- * Used for the README image and the demo-video shots (docs/VIDEO_PLAN.md).
+ * Used for the README image and screen captures of the running app.
  *
  *   npx tsx scripts/capture.ts <url> <out.png> [--w 1920] [--h 1080] [--scale 2] [--wait 6000] [--js "<code run before capture>"] [--after 1500]
  *
@@ -32,13 +32,17 @@ const wait = Number(opt('wait', '6000'));
 const after = Number(opt('after', '1500'));
 const js = opt('js', '');
 const record = Number(opt('record', '0'));
+// --profile <dir> keeps cookies between runs (e.g. a PayPal sandbox log-in you typed yourself);
+// --headed shows the window. Keep profile dirs out of the repo: they hold session cookies.
+const profile = opt('profile', '');
+const headed = process.argv.includes('--headed');
 const port = 9300 + Math.floor(Math.random() * 500);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const chrome = spawn(CHROME, [
-  '--headless=new',
+  ...(headed ? [] : ['--headless=new']),
   `--remote-debugging-port=${port}`,
-  `--user-data-dir=${mkdtempSync(join(tmpdir(), 'fl-capture-'))}`,
+  `--user-data-dir=${profile || mkdtempSync(join(tmpdir(), 'fl-capture-'))}`,
   '--hide-scrollbars',
   '--no-first-run',
   '--force-color-profile=srgb',
@@ -76,6 +80,25 @@ try {
   await send('Page.enable');
   await send('Page.navigate', { url });
   await sleep(wait);
+  // --until <regex>: wait (up to 5 min) for the page URL to match, e.g. while a person logs in
+  // themselves in a --headed window. Then --goto <url> opens the page to capture.
+  const until = opt('until', '');
+  if (until) {
+    const re = new RegExp(until);
+    console.log(`waiting for a URL matching ${until} …`);
+    for (let i = 0; i < 300; i++) {
+      // Matched against the URL plus the page's visible text, so a page state can be waited for too.
+      const probe = "location.href + ' ' + (document.body ? document.body.innerText.slice(0, 4000) : '')";
+      const r = await send<{ result?: { value?: string } }>('Runtime.evaluate', { expression: probe, returnByValue: true }).catch(() => ({}) as { result?: { value?: string } });
+      if (re.test(r.result?.value ?? '')) break;
+      await sleep(1000);
+    }
+    const goto = opt('goto', '');
+    if (goto) {
+      await send('Page.navigate', { url: goto });
+      await sleep(wait);
+    }
+  }
   if (record > 0) {
     mkdirSync(out, { recursive: true });
     const stamps: { file: string; t: number }[] = [];
@@ -96,12 +119,32 @@ try {
     process.exit(0);
   }
   if (js) {
-    await send('Runtime.evaluate', { expression: `(async () => { ${js} })()`, awaitPromise: true });
+    const r = await send<{ result?: { value?: unknown } }>('Runtime.evaluate', { expression: `(async () => { ${js} })()`, awaitPromise: true, returnByValue: true });
+    // A script that returns a value (e.g. text read from the page) has it printed for the caller.
+    if (r.result?.value !== undefined) console.log(`js: ${JSON.stringify(r.result.value)}`);
     await sleep(after);
   }
   const shot = await send<{ data: string }>('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   writeFileSync(out, Buffer.from(shot.data, 'base64'));
   console.log(`wrote ${out} (${width}x${height} @${scale}x)`);
+  // --linger <regex>: keep the (headed) window open for a person to finish, e.g. approve a
+  // payment, until the URL or page text matches; then save a second shot next to the first.
+  const linger = opt('linger', '');
+  if (linger) {
+    const re = new RegExp(linger);
+    console.log(`window left open until the page matches ${linger} …`);
+    for (let i = 0; i < 300; i++) {
+      const r = await send<{ result?: { value?: string } }>('Runtime.evaluate', { expression: "location.href + ' ' + (document.body ? document.body.innerText.slice(0, 4000) : '')", returnByValue: true }).catch(() => ({}) as { result?: { value?: string } });
+      if (re.test(r.result?.value ?? '')) {
+        console.log(`linger: ${(r.result?.value ?? '').slice(0, 300).replace(/\s+/g, ' ')}`);
+        break;
+      }
+      await sleep(1000);
+    }
+    await sleep(after);
+    const done = await send<{ data: string }>('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync(out.replace(/\.png$/, '-after.png'), Buffer.from(done.data, 'base64'));
+  }
   ws.close();
 } finally {
   chrome.kill();

@@ -17,3 +17,12 @@ data/
 next-env.d.ts
 *.tsbuildinfo
 .claude/
+
+# Not part of the product: planning, submission and demo-video material stays local.
+/CLAUDE.md
+/SUBMISSION.md
+/docs/VIDEO_PLAN.md
+/docs/VOICEOVER.md
+/video/
+/devpost-gallery/
+/vo_*.mp4

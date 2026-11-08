@@ -1,6 +1,6 @@
 /**
  * PayPal REST client — the ONLY module that reads PayPal credentials
- * (SPEC §5.5, CLAUDE.md). Sandbox only: the base URL is fixed and the loader
+ * (SPEC §5.5). Sandbox only: the base URL is fixed and the loader
  * refuses to start unless PAYPAL_ENV=sandbox.
  *
  * Plain fetch, no SDK: the PayPal Server SDK (checked via the APIMatic
