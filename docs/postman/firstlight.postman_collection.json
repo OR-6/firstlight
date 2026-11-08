@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Firstlight (PayPal sandbox)",
-    "description": "Earthquake relief cash in minutes, no application needed. Every public endpoint of the hosted demo, in the order a judge would try them. PayPal SANDBOX only: no real money moves. Requests marked 'sends sandbox money' create a real PayPal sandbox payout batch.",
+    "description": "Earthquake relief cash in minutes, no application needed. Every public endpoint of the hosted demo. PayPal SANDBOX only: no real money moves.\n\nThe first folder is read-only and safe to run top to bottom with the Collection Runner; each request has tests. The second folder changes the demo's state, and 'Send payouts' creates a real PayPal sandbox payout batch.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -20,7 +20,8 @@
   ],
   "item": [
     {
-      "name": "1. The quake and the plan",
+      "name": "Read-only (safe to run top to bottom)",
+      "description": "GETs, MCP read-only tools and isolated red-team runs. Nothing here changes the live demo or calls PayPal except to read.",
       "item": [
         {
           "name": "Health",
@@ -38,7 +39,19 @@
               ]
             },
             "description": "Sandbox flag and liveness."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Sandbox only', () => pm.expect(pm.response.json().sandbox).to.eql(true));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "State",
@@ -56,7 +69,19 @@
               ]
             },
             "description": "Pool, latest plan, pending approvals, replay mode."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Pool balance is a number', () => pm.expect(pm.response.json().pool.balanceCents).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Replayed earthquake (USGS us6000u18k)",
@@ -75,8 +100,919 @@
               ]
             },
             "description": "The real M7.7 Panama event with EMSC corroboration and the enrolled households."
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Event id', () => pm.expect(pm.response.json().id).to.eql('us6000u18k'));"
+                ]
+              }
+            }
+          ]
         },
+        {
+          "name": "Active relief events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/events/active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "events",
+                "active"
+              ]
+            },
+            "description": "Current earthquake relief events and where their payouts stand (the same answer as MCP list_active_events)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Events list', () => pm.expect(pm.response.json().events).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/plans",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "plans"
+              ]
+            },
+            "description": "Newest first. If there is a plan, its id is saved as planId for the requests in the other folder."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const plans = pm.response.json().plans;",
+                  "pm.test('Plans list', () => pm.expect(plans).to.be.an('array'));",
+                  "if (plans.length) pm.collectionVariables.set('planId', String(plans[0].id));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Payout batches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "batches"
+              ]
+            },
+            "description": "Every batch sent to PayPal from this server, with its clock and its audit entries."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Batches list', () => pm.expect(pm.response.json().batches).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reconcile with PayPal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reconcile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reconcile"
+              ]
+            },
+            "description": "Each batch compared with PayPal's own record (read-only GETs to PayPal)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Says whether PayPal is configured', () => pm.expect(pm.response.json().configured).to.be.a('boolean'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Recorded sandbox runs, read back from PayPal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/reconcile/recorded",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reconcile",
+                "recorded"
+              ]
+            },
+            "description": "The payout batches made while building, as PayPal reports them now: status, items, total, fees and PayPal's own created and completed times. Read-only, cached 10 minutes."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Batches list', () => pm.expect(pm.response.json().batches).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Audit log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit?limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "Newest first. Narrow it with plan=<id>, batch=<our id or PayPal batch id> or type=<event type, or a prefix like paypal.*>."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Entries and count', () => { const j = pm.response.json(); pm.expect(j.entries).to.be.an('array'); pm.expect(j.count).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Audit log, PayPal entries only",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit?type=paypal.*&limit=100",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "paypal.*"
+                },
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            },
+            "description": "The same log filtered to entries whose type starts with paypal. (batch accepted, webhooks, status updates)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Only PayPal entries', () => pm.response.json().entries.forEach((e) => pm.expect(e.type.startsWith('paypal.')).to.eql(true)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Verify the audit chain",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/audit/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "audit",
+                "verify"
+              ]
+            },
+            "description": "The server recomputes every hash. To check it yourself instead, recompute from GET /api/audit with the formula in the manifest (receiptFormat.auditChain)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Chain intact', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Red team: compromised agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/redteam/run",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "redteam",
+                "run"
+              ]
+            },
+            "description": "Runs in an isolated copy with a simulated PayPal; the live log and pool are untouched. Other scenarios: poisoned-news, spoof-duplicate, late-registration, over-budget.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scenario\": \"compromised-agent\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Nothing unauthorised sent', () => pm.expect(pm.response.json().unauthorisedCents).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Red team: full suite",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/redteam/report",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "redteam",
+                "report"
+              ]
+            },
+            "description": "27 payloads, residual risks and the held-out sentinel set, in isolated copies. Takes a few seconds.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Results list', () => pm.expect(pm.response.json().results).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Manifest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/.well-known/firstlight.json",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                ".well-known",
+                "firstlight.json"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Firstlight, sandbox', () => { const j = pm.response.json(); pm.expect(j.name).to.eql('Firstlight'); pm.expect(j.sandbox).to.eql(true); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "llms.txt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/llms.txt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "llms.txt"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Plain-text summary', () => pm.expect(pm.response.text()).to.include('# Firstlight'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP initialize",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2025-06-18\",\n    \"capabilities\": {},\n    \"clientInfo\": {\n      \"name\": \"postman\",\n      \"version\": \"1\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('Server is firstlight', () => pm.expect(j.result.serverInfo.name).to.eql('firstlight'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP tools/list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 2,\n  \"method\": \"tools/list\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('Lists check_payout_plan', () => pm.expect(j.result.tools.map((t) => t.name)).to.include('check_payout_plan'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP get_pool_status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 3,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_pool_status\",\n    \"arguments\": {}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('Pool balance', () => pm.expect(j.result.structuredContent.balanceUsd).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP list_active_events",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 4,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"list_active_events\",\n    \"arguments\": {}\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('Events list', () => pm.expect(j.result.structuredContent.events).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP check_payout_plan (plan with an attacker address)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "description": "A payout plan for this programme's enrolled households, run through the firewall as a dry run: nothing is paid or stored. This one pays one household and slips in an attacker's address. Expect the address BLOCKed at $0 (not enrolled), the household held for a person, and R12's coverage check: before anyone is paid, 6 households left out, $560 short. Answers NO_EVENT if the earthquake has not been assessed on this server yet.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 5,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"check_payout_plan\",\n    \"arguments\": {\n      \"eventId\": \"us6000u18k\",\n      \"decision\": \"trigger\",\n      \"rationale\": \"Pay the household nearest the epicentre.\",\n      \"items\": [\n        {\n          \"recipientId\": \"rcp_01\",\n          \"tier\": \"A\",\n          \"note\": \"Relief payment\",\n          \"why\": \"26 km, band A\"\n        },\n        {\n          \"recipientId\": \"attacker@example.com\",\n          \"tier\": \"A\",\n          \"note\": \"Relief payment\",\n          \"why\": \"Also affected\"\n        }\n      ],\n      \"exceptionRequests\": []\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('Firewall answered', () => pm.expect(j.result).to.be.an('object'));",
+                  "const out = j.result.structuredContent;",
+                  "if (out) {",
+                  "  pm.test('Attacker address blocked at $0', () => { const a = out.items.find((i) => i.recipientId === 'attacker@example.com'); pm.expect(a.verdict).to.eql('BLOCK'); pm.expect(a.amountUsd).to.eql('0.00'); });",
+                  "  pm.test('R12 coverage reported', () => { pm.expect(out.coverage.checked).to.eql(true); pm.expect(out.coverage.shortfallUsd).to.match(/^[0-9]+[.][0-9]{2}$/); });",
+                  "} else {",
+                  "  pm.test('Not assessed yet: NO_EVENT', () => pm.expect(j.result.content[0].text).to.match(/^NO_EVENT: /));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP get_allowance with a fake token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "description": "A well-formed token nobody created. Agents cannot grant themselves an allowance: the answer is ALLOWANCE_UNKNOWN.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 6,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_allowance\",\n    \"arguments\": {\n      \"allowance_token\": \"alw_fakefakefakefakefakefakefakefake\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('ALLOWANCE_UNKNOWN', () => { pm.expect(j.result.isError).to.eql(true); pm.expect(j.result.content[0].text).to.match(/^ALLOWANCE_UNKNOWN: /); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "MCP get_receipt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json, text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mcp",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mcp"
+              ]
+            },
+            "description": "Set receiptId to a real rcpt_… id to see a receipt; the placeholder answers NOT_FOUND.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 7,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_receipt\",\n    \"arguments\": {\n      \"receipt_id\": \"{{receiptId}}\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test('JSON-RPC answer', () => pm.expect(j.jsonrpc).to.eql('2.0'));",
+                  "pm.test('Receipt or NOT_FOUND', () => pm.expect(j.result.structuredContent ? j.result.structuredContent.receiptId : j.result.content[0].text).to.match(/^(rcpt_|NOT_FOUND: )/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pool",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/pool",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pool"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Balance in USD', () => pm.expect(pm.response.json().balanceUsd).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Donation feed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/donations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "donations"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Donations list', () => pm.expect(pm.response.json().donations).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/receipts/{{receiptId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "receipts",
+                "{{receiptId}}"
+              ]
+            },
+            "description": "Includes paypalConfirmed: what PayPal itself reports for the order. Set receiptId to a real rcpt_… id; the placeholder answers 404."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const placeholder = pm.collectionVariables.get('receiptId') === 'rcpt_0000000000000000';",
+                  "if (placeholder) {",
+                  "  pm.test('Placeholder receipt: 404', () => pm.response.to.have.status(404));",
+                  "} else {",
+                  "  pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "  pm.test('Receipt id', () => pm.expect(pm.response.json().receiptId).to.eql(pm.collectionVariables.get('receiptId')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unsigned PayPal webhook (refused)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/webhooks/paypal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "webhooks",
+                "paypal"
+              ]
+            },
+            "description": "A delivery without PayPal transmission headers is refused before anything else happens: 400 MISSING_SIGNATURE_HEADERS, nothing verified, counted or stored. Real deliveries are checked with PayPal verify-webhook-signature.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_type\": \"PAYMENT.PAYOUTS-ITEM.SUCCEEDED\",\n  \"resource\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('MISSING_SIGNATURE_HEADERS', () => pm.expect(pm.response.json().error).to.eql('MISSING_SIGNATURE_HEADERS'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Changes state / sends sandbox money",
+      "description": "Creates plans, records decisions, and Send payouts creates a real PayPal sandbox batch. Run these by hand, in order.",
+      "item": [
         {
           "name": "Run assessment (replays the recorded AI agent run)",
           "request": {
@@ -99,7 +1035,7 @@
                 "assess"
               ]
             },
-            "description": "Set redteam to true to add four poisoned news items.",
+            "description": "Creates a new plan from the recorded agent run and saves its id as planId. Set redteam to true to add four poisoned news items.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"redteam\": false\n}",
@@ -109,25 +1045,21 @@
                 }
               }
             }
-          }
-        },
-        {
-          "name": "Plans",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/plans",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "plans"
-              ]
-            },
-            "description": ""
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "const plan = pm.response.json();",
+                  "pm.test('Plan id', () => pm.expect(plan.id).to.be.a('number'));",
+                  "pm.collectionVariables.set('planId', String(plan.id));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Plan with firewall verdict",
@@ -145,8 +1077,20 @@
                 "{{planId}}"
               ]
             },
-            "description": "Every household, its tier, the amount the firewall computed and each rule's result."
-          }
+            "description": "Read-only, but it needs a plan: every household, its tier, the amount the firewall computed and each rule's result."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Verdict', () => pm.expect(pm.response.json().verdict.overall).to.be.oneOf(['ALLOW', 'REQUIRE_APPROVAL', 'BLOCK']));"
+                ]
+              }
+            }
+          ]
         },
         {
           "name": "Draft the firewall's own plan (everyone owed)",
@@ -170,7 +1114,7 @@
                 "floor"
               ]
             },
-            "description": "Deterministic floor plan; always needs a person.",
+            "description": "Deterministic floor plan; always needs a person. Saves the new plan id as planId.",
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -180,13 +1124,20 @@
                 }
               }
             }
-          }
-        }
-      ]
-    },
-    {
-      "name": "2. A person decides, PayPal pays",
-      "item": [
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "const plan = pm.response.json(); if (plan.id) pm.collectionVariables.set('planId', String(plan.id));"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "Approve",
           "request": {
@@ -209,7 +1160,6 @@
                 "approve"
               ]
             },
-            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"approver\": \"Judge\",\n  \"reason\": \"Checked the households and amounts\"\n}",
@@ -243,7 +1193,6 @@
                 "deny"
               ]
             },
-            "description": "",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"approver\": \"Judge\",\n  \"reason\": \"Not convinced\"\n}",
@@ -277,7 +1226,7 @@
                 "execute"
               ]
             },
-            "description": "Creates a real PayPal SANDBOX Payouts batch. Capped per hour on the hosted demo.",
+            "description": "Creates a real PayPal SANDBOX Payouts batch. Capped per hour on the hosted demo. Then see Payout batches and the audit log filtered with batch=<the PayPal batch id>.",
             "body": {
               "mode": "raw",
               "raw": "{}",
@@ -287,426 +1236,6 @@
                 }
               }
             }
-          }
-        },
-        {
-          "name": "Payout batches",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/batches",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "batches"
-              ]
-            },
-            "description": ""
-          }
-        },
-        {
-          "name": "Reconcile with PayPal",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/reconcile",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "reconcile"
-              ]
-            },
-            "description": "Each batch compared with PayPal's own record."
-          }
-        }
-      ]
-    },
-    {
-      "name": "3. Try to break it",
-      "item": [
-        {
-          "name": "Red team: compromised agent",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/redteam/run",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "redteam",
-                "run"
-              ]
-            },
-            "description": "Runs in an isolated copy with a simulated PayPal. Other scenarios: poisoned-news, spoof-duplicate, late-registration, over-budget.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"scenario\": \"compromised-agent\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Red team: full suite",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/api/redteam/report",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "redteam",
-                "report"
-              ]
-            },
-            "description": "27 payloads, residual risks and the held-out sentinel set.",
-            "body": {
-              "mode": "raw",
-              "raw": "{}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Audit log",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/audit?limit=100",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "audit"
-              ],
-              "query": [
-                {
-                  "key": "limit",
-                  "value": "100"
-                }
-              ]
-            },
-            "description": ""
-          }
-        },
-        {
-          "name": "Verify the audit chain",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/audit/verify",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "audit",
-                "verify"
-              ]
-            },
-            "description": ""
-          }
-        }
-      ]
-    },
-    {
-      "name": "4. Agents and donations",
-      "item": [
-        {
-          "name": "Manifest",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/.well-known/firstlight.json",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                ".well-known",
-                "firstlight.json"
-              ]
-            },
-            "description": ""
-          }
-        },
-        {
-          "name": "llms.txt",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/llms.txt",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "llms.txt"
-              ]
-            },
-            "description": ""
-          }
-        },
-        {
-          "name": "MCP initialize",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json, text/event-stream"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/mcp",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "mcp"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"initialize\",\n  \"params\": {\n    \"protocolVersion\": \"2025-06-18\",\n    \"capabilities\": {},\n    \"clientInfo\": {\n      \"name\": \"postman\",\n      \"version\": \"1\"\n    }\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "MCP tools/list",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json, text/event-stream"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/mcp",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "mcp"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/list\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "MCP get_pool_status",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json, text/event-stream"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/mcp",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "mcp"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_pool_status\",\n    \"arguments\": {}\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "MCP list_active_events",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json, text/event-stream"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/mcp",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "mcp"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"list_active_events\",\n    \"arguments\": {}\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "MCP get_receipt",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json, text/event-stream"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/mcp",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "mcp"
-              ]
-            },
-            "description": "",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"jsonrpc\": \"2.0\",\n  \"id\": 1,\n  \"method\": \"tools/call\",\n  \"params\": {\n    \"name\": \"get_receipt\",\n    \"arguments\": {\n      \"receipt_id\": \"{{receiptId}}\"\n    }\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "Pool",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/pool",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "pool"
-              ]
-            },
-            "description": ""
-          }
-        },
-        {
-          "name": "Donation feed",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/donations",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "donations"
-              ]
-            },
-            "description": ""
-          }
-        },
-        {
-          "name": "Receipt",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/api/receipts/{{receiptId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "receipts",
-                "{{receiptId}}"
-              ]
-            },
-            "description": "Includes paypalConfirmed: what PayPal itself reports for the order."
           }
         }
       ]

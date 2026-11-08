@@ -11,7 +11,7 @@ import { dryRunLimit as sharedDryRunLimit, dryRunSummary, type RollingLimit } fr
  * Firstlight's MCP server for agents (SPEC §5.6b): six tools, all read-only
  * except create_donation, which only creates a PayPal order that a person
  * must approve, and only under an allowance a person created.
- * check_payout_plan runs the payout firewall itself on a plan the caller
+ * check_payout_plan runs the payout firewall itself on a plan for this programme's enrolled households that the caller
  * sends, as a dry run: nothing is stored or paid.
  * Every agent-supplied string is untrusted data.
  *
@@ -203,7 +203,7 @@ export function buildMcpServer(deps: { db: Db; donations: DonationService; pipel
     { name: 'firstlight', version: '1.2.0' },
     {
       instructions:
-        'Firstlight is a disaster-relief pool running in the PayPal SANDBOX (no real money). You can check the pool and active relief events without credentials, and dry-run any payout plan against the payout firewall with check_payout_plan before anything is sent to PayPal. To donate you need an allowance_token that a person created for you at /agents: it sets who you are (its label becomes your donor name), a cap and an expiry, and the server enforces them. You cannot create or revoke an allowance yourself. create_donation returns a PayPal approval URL: a person must open it and approve before anything is charged. The first approval ties the allowance to that PayPal account; a donation approved by any other account is held and never credited. get_receipt shows what PayPal itself reports for the order.',
+        "Firstlight is a disaster-relief pool running in the PayPal SANDBOX (no real money). You can check the pool and active relief events without credentials, and dry-run a payout plan for this programme's enrolled households against the payout firewall with check_payout_plan before anything is sent to PayPal. To donate you need an allowance_token that a person created for you at /agents: it sets who you are (its label becomes your donor name), a cap and an expiry, and the server enforces them. You cannot create or revoke an allowance yourself. create_donation returns a PayPal approval URL: a person must open it and approve before anything is charged. The first approval ties the allowance to that PayPal account; a donation approved by any other account is held and never credited. get_receipt shows what PayPal itself reports for the order.",
     },
   );
   const ok = <T extends Record<string, unknown>>(v: T) => ({ content: [{ type: 'text' as const, text: JSON.stringify(v, null, 2) }], structuredContent: v });
@@ -308,7 +308,7 @@ export function buildMcpServer(deps: { db: Db; donations: DonationService; pipel
     {
       title: 'Check a payout plan against the firewall',
       description:
-        'Dry-run any payout plan against the firewall before sending anything to PayPal. Send a plan in the same shape the internal payout agent submits (eventId, decision, rationale, items [{recipientId, tier, note, why}], exceptionRequests). Returns the verdict (ALLOW, REQUIRE_APPROVAL or BLOCK), the amount the firewall itself computes for each household, every rule finding in plain words, and the R12 coverage shortfall, checked against the live registry, the pool ledger as it is now and the stored earthquake. Read-only: no money moves and nothing is stored. A real payout is checked again when it is sent, and a person approves any plan the firewall holds. Rate-limited across all callers.',
+        "Dry-run a payout plan for this programme's enrolled households against the firewall before sending anything to PayPal. Send a plan in the same shape the internal payout agent submits (eventId, decision, rationale, items [{recipientId, tier, note, why}], exceptionRequests). Returns the verdict (ALLOW, REQUIRE_APPROVAL or BLOCK), the amount the firewall itself computes for each household, every rule finding in plain words, and the R12 coverage shortfall, checked against the live registry, the pool ledger as it is now and the stored earthquake. Read-only: no money moves and nothing is stored. A real payout is checked again when it is sent, and a person approves any plan the firewall holds. Rate-limited across all callers.",
       inputSchema: checkPlanInput,
       outputSchema: checkPlanOutput,
       annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
