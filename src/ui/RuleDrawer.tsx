@@ -2,9 +2,9 @@
 
 import { useEffect, useRef } from 'react';
 import type { RuleId } from '@/firewall/types';
-import { StatusMark, VerdictChip, usd } from './format';
+import { Notice, StatusMark, VerdictChip, usd } from './format';
 import type { PlanRow } from './PlanGrid';
-import { draftLang, noteLang, plainRule, verdictReasons } from './plain';
+import { draftLang, findingTitle, noteLang, plainRule, verdictReasons } from './plain';
 
 /** What each rule checks, in plain words (SPEC §5.4). */
 export const RULE_NAMES: Record<RuleId, string> = {
@@ -21,7 +21,15 @@ export const RULE_NAMES: Record<RuleId, string> = {
   R12: 'Nobody eligible left out or underpaid',
 };
 
-export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () => void }) {
+/** A finding's heading: its own title where a rule returns several findings (R9, R12), else the rule's name. */
+export function ruleTitle(r: { id: string; reasonCode: string }): string {
+  return findingTitle(r.reasonCode) ?? RULE_NAMES[r.id as RuleId] ?? r.id;
+}
+
+/** Why the drawer's row no longer matches the screen behind it. */
+export type DrawerStale = 'reset' | 'replaced' | null;
+
+export function RuleDrawer({ row, stale = null, onClose }: { row: PlanRow | null; stale?: DrawerStale; onClose: () => void }) {
   const closeRef = useRef<HTMLButtonElement>(null);
   const open = row !== null;
   useEffect(() => {
@@ -58,6 +66,15 @@ export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () 
           </button>
         </header>
 
+        {stale ? (
+          <div className="border-b border-line-soft px-6 py-3">
+            <Notice>
+              {stale === 'reset'
+                ? 'This plan was reset. The checks below belong to a plan that no longer exists, and nothing in it can be paid.'
+                : 'A new assessment replaced this plan. The checks below are from the old plan; close this and select the household again.'}
+            </Notice>
+          </div>
+        ) : null}
         <div className="border-b border-line-soft px-6 py-4">
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="text-[0.85rem] text-ink-muted">Firewall verdict</span>
@@ -81,12 +98,14 @@ export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () 
                 </span>
                 <div className="min-w-0">
                   <p className="text-[0.93rem] font-semibold">
-                    {RULE_NAMES[r.id]}
+                    <span className="num mr-1.5 font-normal text-ink-dim" title={`${r.reasonCode}: ${r.detail}`}>
+                      {r.id}
+                    </span>
+                    {ruleTitle(r)}
                     {r.scope === 'plan' ? <span className="ml-2 text-[0.78rem] font-normal text-ink-dim">whole plan</span> : null}
                   </p>
-                  <p className="break-words text-[0.88rem] text-ink-muted">{plainRule(r)}</p>
-                  <p className="hash mt-0.5 break-words text-[0.72rem]" title={r.detail}>
-                    {r.id} {r.reasonCode}
+                  <p className="break-words text-[0.88rem] text-ink-muted" title={r.detail}>
+                    {plainRule(r)}
                   </p>
                 </div>
               </li>

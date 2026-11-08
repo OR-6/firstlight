@@ -2,15 +2,27 @@
 
 import Link from 'next/link';
 import type { EventView, PlanView } from '@/server/views';
-import { shortHash, usd } from './format';
+import { PAGER, usd } from './format';
 import { Mark, type State } from './SignMark';
 
 /**
  * The path a relief payment takes, left to right (top to bottom on phones).
- * Each stop shows its real state and the audit-log hash that proves it
- * happened. This is a genuine sequence, so it is drawn as one.
+ * Each stop shows its real state and links to the audit-log entry that
+ * proves it happened (the hash itself is in the link's tooltip and on the
+ * Audit page). This is a genuine sequence, so it is drawn as one.
  */
-type Stop = { name: string; state: State; headline: string; detail: string; hash?: string; seq?: number };
+export type Stop = {
+  name: string;
+  state: State;
+  headline: string;
+  detail: string;
+  hash?: string;
+  seq?: number;
+  /** Fill for the neutral `info` mark (the PAGER alert colour). */
+  color?: string;
+  /** This stage waits on a person: the board links to the decision panel. */
+  decide?: boolean;
+};
 
 export function buildStops(event: EventView | null, plan: PlanView | null): Stop[] {
   const t = (type: string) => plan?.trail.find((e) => e.type === type);
@@ -22,7 +34,10 @@ export function buildStops(event: EventView | null, plan: PlanView | null): Stop
   const signal: Stop = event
     ? {
         name: 'Signal',
-        state: plan ? 'done' : 'wait',
+        // Before an assessment the quake is only reported, not yet checked: a neutral
+        // mark in its PAGER colour. The yellow diamond is reserved for "needs approval".
+        state: plan ? 'done' : 'info',
+        color: event.alert ? PAGER[event.alert] : undefined,
         headline: `M${event.mag} ${event.alert ? `PAGER ${event.alert}` : 'no PAGER alert'}`,
         detail: corr?.mode === 'emsc' ? 'USGS and EMSC agree' : corr?.mode === 'fallback' ? 'USGS only (not independent)' : 'No second source',
         hash: t('signal.received')?.hash,
@@ -76,7 +91,7 @@ export function buildStops(event: EventView | null, plan: PlanView | null): Stop
   let approval: Stop;
   if (!v || v.overall === 'BLOCK') approval = { name: 'Approval', state: 'idle', headline: 'Not reached', detail: '' };
   else if (v.overall === 'ALLOW') approval = { name: 'Approval', state: 'done', headline: 'Not needed', detail: 'Within auto-approve limit' };
-  else if (!plan.approval) approval = { name: 'Approval', state: 'wait', headline: 'Waiting', detail: 'A person must decide' };
+  else if (!plan.approval) approval = { name: 'Approval', state: 'wait', headline: 'Waiting', detail: 'A person must decide', decide: true };
   else
     approval = {
       name: 'Approval',
@@ -116,18 +131,48 @@ const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** "Stage 4 of 7: Firewall, needs approval": the first stage that is not done yet. */
 export function currentStage(stops: Stop[]): string {
-  const i = stops.findIndex((s) => s.state !== 'done');
+  const i = stops.findIndex((s) => s.state !== 'done' && s.state !== 'info');
   if (i < 0) return `All ${stops.length} stages done`;
   const s = stops[i]!;
   return `Stage ${i + 1} of ${stops.length}: ${s.name}, ${lowerFirst(s.headline)}`;
 }
 
-/** Drawn as a green guide sign: white lettering, white inset border, sign-shaped marks. */
-export function MoneyPath({ stops }: { stops: Stop[] }) {
+const audit = (s: Stop) => (s.hash && s.seq != null ? { href: `/audit#seq-${s.seq}`, title: `Audit entry ${s.seq}, hash ${s.hash}` } : null);
+const linkCls = 'underline underline-offset-2 hover:text-white focus-visible:outline-white';
+
+/** "Go to the decision" on a stage that waits on a person; "Audit entry 12" on a recorded one. */
+function StageLinks({ s, onDecide, className = '' }: { s: Stop; onDecide?: () => void; className?: string }) {
+  if (s.decide && onDecide)
+    return (
+      <a
+        href="#decision"
+        className={`${className} font-semibold text-white ${linkCls}`}
+        onClick={(e) => {
+          e.preventDefault();
+          onDecide();
+        }}
+      >
+        Go to the decision
+      </a>
+    );
+  const a = audit(s);
+  if (!a) return null;
+  return (
+    <Link href={a.href} className={`${className} text-white/75 ${linkCls}`} title={a.title}>
+      Audit entry {s.seq}
+    </Link>
+  );
+}
+
+/**
+ * Drawn as a green guide sign: white lettering, white inset border, sign-shaped marks.
+ * `onDecide` makes a stage that waits on a person link to the page's decision panel.
+ */
+export function MoneyPath({ stops, onDecide }: { stops: Stop[]; onDecide?: () => void }) {
   return (
     <section aria-label="Path of this payment" className="rounded-[var(--radius-panel)] bg-allow p-[3px] text-white">
       <div className="rounded-[4px] border-2 border-white/90">
-        <PhonePath stops={stops} />
+        <PhonePath stops={stops} onDecide={onDecide} />
         <ol className="hidden auto-cols-[minmax(7.5rem,1fr)] grid-flow-col md:grid">
           {stops.map((s, i) => {
             const next = stops[i + 1];
@@ -135,7 +180,7 @@ export function MoneyPath({ stops }: { stops: Stop[] }) {
             return (
               <li key={s.name} className="relative min-w-0 px-3 pb-4 pt-4 lg:px-4">
                 <div className="mb-2.5 flex h-5 items-center" aria-hidden>
-                  <Mark state={s.state} />
+                  <Mark state={s.state} color={s.color} />
                   {next ? (
                     <span
                       className="ml-1.5 flex-1"
@@ -154,15 +199,7 @@ export function MoneyPath({ stops }: { stops: Stop[] }) {
                     {s.detail}
                   </p>
                 ) : null}
-                {s.hash ? (
-                  <Link
-                    href={`/audit#seq-${s.seq}`}
-                    className="num mt-1.5 inline-block text-[0.8rem] text-white/75 underline-offset-2 hover:text-white hover:underline focus-visible:outline-white"
-                    title={`Audit entry ${s.seq}: ${s.hash}`}
-                  >
-                    #{shortHash(s.hash)}
-                  </Link>
-                ) : null}
+                <StageLinks s={s} onDecide={onDecide} className="mt-1.5 inline-block text-[0.8rem]" />
               </li>
             );
           })}
@@ -176,7 +213,7 @@ export function MoneyPath({ stops }: { stops: Stop[] }) {
  * Below 768 px: a summary plate naming the current stage, then every stage as
  * a vertical list (mark and connector on the left), so nothing scrolls sideways.
  */
-function PhonePath({ stops }: { stops: Stop[] }) {
+function PhonePath({ stops, onDecide }: { stops: Stop[]; onDecide?: () => void }) {
   return (
     <div className="md:hidden">
       <p className="border-b-2 border-white/90 px-4 py-2.5 text-[1rem] font-bold">{currentStage(stops)}</p>
@@ -184,11 +221,12 @@ function PhonePath({ stops }: { stops: Stop[] }) {
         {stops.map((s, i) => {
           const last = i === stops.length - 1;
           const reached = s.state !== 'idle';
+          const links = Boolean(s.decide && onDecide) || audit(s) !== null;
           return (
             <li key={s.name} className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3">
               <div className="flex flex-col items-center" aria-hidden>
                 <span className="pt-0.5">
-                  <Mark state={s.state} />
+                  <Mark state={s.state} color={s.color} />
                 </span>
                 {!last ? (
                   <span
@@ -202,18 +240,10 @@ function PhonePath({ stops }: { stops: Stop[] }) {
                   <span className="text-[0.85rem] text-white/80">{s.name}</span>{' '}
                   <span className={`text-[1rem] font-bold ${reached ? 'text-white' : 'text-white/55'}`}>{s.headline}</span>
                 </p>
-                {s.detail || s.hash ? (
+                {s.detail || links ? (
                   <p className="num mt-0.5 break-words text-[0.85rem] text-white/85">
                     {s.detail}
-                    {s.hash ? (
-                      <Link
-                        href={`/audit#seq-${s.seq}`}
-                        className={`${s.detail ? 'ml-2' : ''} text-white/75 underline-offset-2 hover:text-white hover:underline focus-visible:outline-white`}
-                        title={`Audit entry ${s.seq}: ${s.hash}`}
-                      >
-                        #{shortHash(s.hash)}
-                      </Link>
-                    ) : null}
+                    <StageLinks s={s} onDecide={onDecide} className={s.detail ? 'ml-2' : ''} />
                   </p>
                 ) : null}
               </div>

@@ -157,9 +157,10 @@ export function plainRule(r: Pick<RuleResult, 'reasonCode' | 'detail'>, opts: { 
       return "The agent's plan is not in the required format, so nothing can be paid.";
     case 'PLAN_EVENT_MISMATCH':
       return 'The plan names a different earthquake, so nothing can be paid.';
-    case 'PLAN_UNKNOWN_FIELDS':
-      m = d.match(/: (.+)$/);
-      return `The plan had extra fields${m ? ` (${m[1]})` : ''}. They were ignored, and a person checks the plan.`;
+    case 'PLAN_UNKNOWN_FIELDS': {
+      const f = extraFields(d);
+      return f ? `The agent ${f}. They were ignored, and a person checks the plan.` : 'The plan had extra fields. They were ignored, and a person checks the plan.';
+    }
     case 'INJECTION_SUSPECTED':
       return 'The sentinel found text that looks like an attempt to steer the agent, so a person checks the plan.';
     case 'EXCEPTION_REQUESTED':
@@ -211,7 +212,57 @@ export function plainRule(r: Pick<RuleResult, 'reasonCode' | 'detail'>, opts: { 
   return sentence(d);
 }
 
-/** Notes the firewall replaced are the English fallback, not the recipient's language. */
+/**
+ * "ignored unknown field(s): $.items[0].amount, $.items[0].receiver" becomes
+ * "added payout fields: amount, receiver". Fields inside a payout item are
+ * "payout fields"; anything else is a "plan field". Null when there are none.
+ */
+export function extraFields(detail: string): string | null {
+  const list = detail.match(/: (.+)$/)?.[1];
+  if (!list) return null;
+  const payout = new Set<string>();
+  const other = new Set<string>();
+  for (const raw of list.split(/,\s*/)) {
+    const path = raw.trim();
+    if (!path) continue;
+    const name = path.match(/([^.[\]$]+)\]?$/)?.[1] ?? path;
+    (/\.items\[\d+\]/.test(path) ? payout : other).add(name);
+  }
+  const parts: string[] = [];
+  if (payout.size) parts.push(`added payout ${payout.size === 1 ? 'field' : 'fields'}: ${[...payout].join(', ')}`);
+  if (other.size) parts.push(`added plan ${other.size === 1 ? 'field' : 'fields'}: ${[...other].join(', ')}`);
+  return parts.length ? parts.join('; ') : null;
+}
+
+/**
+ * A finding's own title where one rule can return several findings (R9 plan
+ * integrity, R12 coverage), so two R9 rows never share a heading. Null means
+ * "use the rule's name".
+ */
+export function findingTitle(reasonCode: string): string | null {
+  return FINDING_TITLES[reasonCode] ?? null;
+}
+const FINDING_TITLES: Record<string, string> = {
+  PLAN_CLEAN: 'Plan is well formed',
+  PLAN_MALFORMED: 'Plan format',
+  PLAN_EVENT_MISMATCH: 'Plan names the right earthquake',
+  PLAN_UNKNOWN_FIELDS: 'Extra fields in the plan',
+  INJECTION_SUSPECTED: 'Sentinel flag',
+  EXCEPTION_REQUESTED: 'Exceptions the agent asked for',
+  AGENT_HOLD: 'The agent held',
+  AGENT_ESCALATED: 'The agent asked a person',
+  NOTE_OK: "The agent's draft note",
+  NOTE_REPLACED: "The agent's draft note",
+  ELIGIBLE_OMITTED: 'Eligible households left out',
+  TIER_BELOW_BAND: 'Households paid below their tier',
+  HOLD_ON_MET_TRIGGER: 'Held although the trigger was met',
+};
+
+/** Vulnerability flags as words: "mobility impaired, sole caregiver". */
+export function flagText(flags: readonly string[]): string {
+  return flags.map(humanFlag).join(', ');
+}
+
 /** Language of the note PayPal sends: the household's template, or the English fallback for an unpaid item. */
 export function noteLang(item: Pick<ItemVerdict, 'amountCents'>, locale: string): string | undefined {
   return item.amountCents > 0 ? locale || undefined : 'en';

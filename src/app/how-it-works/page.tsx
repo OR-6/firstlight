@@ -1,6 +1,16 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { defaultFirewallConfig } from '@/firewall/config';
 import { Mark, type State } from '@/ui/SignMark';
+
+/** The fixed English note PayPal delivers, as configured (pure config, no I/O). */
+const EN_NOTE = (() => {
+  const c = defaultFirewallConfig();
+  return (c.payoutNotes.en ?? c.fallbackNote).replace('{amount}', '$120.00');
+})();
+
+/** Prose stays near 75 characters a line; tables, code and diagrams use the wider column. */
+const PROSE = 'max-w-[64ch]';
 
 export const metadata: Metadata = {
   title: 'How it works',
@@ -16,7 +26,7 @@ const ROLES: { who: string; uses: string; can: string }[] = [
   {
     who: 'People affected by the earthquake',
     uses: 'Their own PayPal account, nothing here',
-    can: 'Receive cash with a message in their language. They never apply after the disaster and never see this console.',
+    can: 'Receive the money in their own PayPal or Venmo account, with a message in their language. They never apply after the disaster and never see this console.',
   },
   {
     who: 'Donors',
@@ -74,7 +84,7 @@ function PathDiagram() {
 export default function HowItWorks() {
   return (
     <article className="space-y-8">
-      <header className="max-w-[78ch]">
+      <header className={PROSE}>
         <h1 className="text-[1.5rem] font-[800]">How Firstlight works</h1>
         <p className="mt-2 text-[1.05rem] text-ink-muted">
           After a major earthquake, people need cash first and it usually arrives last. Firstlight is for aid organisations that run cash programmes. When a strong quake is confirmed near households they have already enrolled, an AI agent drafts who
@@ -89,7 +99,7 @@ export default function HowItWorks() {
         <PathDiagram />
       </section>
 
-      <div className="max-w-[78ch] space-y-8">
+      <div className="max-w-[1100px] space-y-8">
         <section aria-labelledby="who">
           <h2 id="who" className="text-[1.15rem] font-bold">
             Who uses what
@@ -118,7 +128,7 @@ export default function HowItWorks() {
           </div>
         </section>
 
-        <section aria-labelledby="enrol" className="space-y-3">
+        <section aria-labelledby="enrol" className={`${PROSE} space-y-3`}>
           <h2 id="enrol" className="text-[1.15rem] font-bold">
             How people are enrolled to receive money
           </h2>
@@ -130,27 +140,34 @@ export default function HowItWorks() {
             There is deliberately no public sign-up. Fake registrations flood in after every disaster, so the firewall refuses anyone enrolled less than 72 hours before the earthquake (rule R1). Someone missed by enrolment is helped through the
             partner&apos;s normal channels, not through a form the agent could be pointed at.
           </p>
+          <p>
+            Enrolment doesn&apos;t have to be a separate list. Where a government already runs a social registry for cash transfers, the same pre-checked households can be used, and the firewall pays a top-up when the quake hits. The sector calls
+            this shock-responsive social protection.
+          </p>
           <p className="text-ink-muted">In this demo the eight enrolled households near the M7.7 Panama earthquake are synthetic, and their PayPal accounts are sandbox test accounts.</p>
         </section>
 
-        <section aria-labelledby="lastmile" className="space-y-3">
+        <section aria-labelledby="lastmile" className={`${PROSE} space-y-3`}>
           <h2 id="lastmile" className="text-[1.15rem] font-bold">
             Who can actually receive the money
           </h2>
           <p>
-            Many rural households hit hardest by an earthquake don&apos;t have a PayPal account. PayPal Payouts is the rail to whoever can receive: a PayPal or Venmo account, or a licensed partner or mobile-wallet provider that pays out cash nearby.
-            Money credited to an account isn&apos;t cash in hand yet, so withdrawal points, fees and checking afterwards that people got it stay the field partner&apos;s job.
+            Many rural households hit hardest by an earthquake don&apos;t have a PayPal account. PayPal Payouts reaches PayPal and Venmo accounts only. For households without one, a real deployment would put a licensed partner&apos;s or a
+            mobile-wallet provider&apos;s rail behind the same firewall, so the same checks decide who is paid and how much. Turning that money into cash nearby, and checking afterwards that people got it, is the field partner&apos;s job.
           </p>
           <p>
-            Every payment arrives with the same fixed message in the household&apos;s language: the amount, that nothing needs to be done, a help line through the local partner, and that Firstlight never asks for a password, code or fee.
-            The agent can&apos;t change that message.
+            Every payment arrives with the same fixed message in the household&apos;s language. It says what the money is, that nothing needs to be done, to ask their local relief partner if they have questions, and that nobody from the
+            programme will ask for a password, code or fee. The agent can&apos;t change it. In English it reads:
+          </p>
+          <p lang="en" className="rounded-[var(--radius-control)] border border-line-soft bg-panel px-3 py-2 text-[0.95rem]">
+            {EN_NOTE}
           </p>
           <p className="text-ink-muted">
             The amounts ($120, $80, $40 by distance) are demo values. A real programme sets them as a share of the local minimum expenditure basket and by household size.
           </p>
         </section>
 
-        <section aria-labelledby="give" className="space-y-3">
+        <section aria-labelledby="give" className={`${PROSE} space-y-3`}>
           <h2 id="give" className="text-[1.15rem] font-bold">
             How donors find Firstlight and give
           </h2>
@@ -176,7 +193,18 @@ export default function HowItWorks() {
           </p>
         </section>
 
-        <section aria-labelledby="safe" className="space-y-3">
+        <section aria-labelledby="rules" className={`${PROSE} space-y-3`}>
+          <h2 id="rules" className="text-[1.15rem] font-bold">
+            Who sets the rules, and who decides
+          </h2>
+          <p>
+            The firewall&apos;s settings are the programme&apos;s pre-agreed trigger and payment rules: how strong a quake must be, how far from it each tier reaches, what each tier pays, and the limits. In humanitarian terms they are an
+            early-action protocol, signed off before the season, not chosen by the agent on the day. The approval step is the designated person&apos;s decision: when the firewall flags a plan, that person approves or denies it, and can
+            never raise an amount.
+          </p>
+        </section>
+
+        <section aria-labelledby="safe" className={`${PROSE} space-y-3`}>
           <h2 id="safe" className="text-[1.15rem] font-bold">
             Why the agent can&apos;t be talked into paying the wrong person
           </h2>
@@ -187,7 +215,7 @@ export default function HowItWorks() {
           </p>
         </section>
 
-        <section aria-labelledby="real" className="space-y-3">
+        <section aria-labelledby="real" className={`${PROSE} space-y-3`}>
           <h2 id="real" className="text-[1.15rem] font-bold">
             What a real deployment would add
           </h2>

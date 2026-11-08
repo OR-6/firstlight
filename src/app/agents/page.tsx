@@ -7,6 +7,10 @@ import { ApiError, call, useApi } from '@/ui/live';
 
 const LIVE_ORIGIN = 'https://firstlight.onrender.com';
 
+/** Prose stays near 75 characters a line; code, forms and the endpoint list use the wider column. */
+const PROSE = 'max-w-[64ch]';
+const WIDE = 'max-w-[1400px]';
+
 type Allowance = {
   allowanceId: string;
   allowanceToken: string;
@@ -123,7 +127,7 @@ export default function AgentsPage() {
 
   return (
     <div className="space-y-8">
-      <header className="max-w-[78ch]">
+      <header className={PROSE}>
         <h1 className="text-[1.5rem] font-[800]">Agents</h1>
         <p className="mt-2 text-[1.05rem] text-ink-muted">
           AI agents can fund the relief pool for the people they work for. An agent can only donate under an allowance a person sets here: who the agent is, how much it may give and until when. Firstlight enforces that allowance on the server, and a
@@ -131,7 +135,7 @@ export default function AgentsPage() {
         </p>
       </header>
 
-      <section aria-labelledby="discover" className="max-w-[78ch] space-y-3">
+      <section aria-labelledby="discover" className="max-w-[64rem] space-y-3">
         <h2 id="discover" className="text-[1.15rem] font-bold">
           How an agent finds Firstlight
         </h2>
@@ -148,18 +152,18 @@ export default function AgentsPage() {
                   {origin}
                   {path}
                 </a>
-                <p className="text-[0.92rem] text-ink-muted">{what}</p>
+                <p className={`${PROSE} text-[0.92rem] text-ink-muted`}>{what}</p>
               </dd>
             </div>
           ))}
         </dl>
       </section>
 
-      <section aria-labelledby="terminal" className="max-w-[78ch] space-y-4">
+      <section aria-labelledby="terminal" className={`${WIDE} space-y-4`}>
         <h2 id="terminal" className="text-[1.15rem] font-bold">
           Try it from a terminal
         </h2>
-        <p className="text-ink-muted">No clone needed. These talk to this site&apos;s MCP endpoint and change nothing.</p>
+        <p className={`${PROSE} text-ink-muted`}>No clone needed. These talk to this site&apos;s MCP endpoint and change nothing.</p>
         <Snippet caption="Start an MCP session" code={initialize} />
         <Snippet caption="List the tools with their input and output schemas" code={toolsList} />
         <Snippet caption="Add Firstlight to Claude Code" code={claudeAdd} />
@@ -167,11 +171,11 @@ export default function AgentsPage() {
 
       <AllowanceSection origin={origin} />
 
-      <section aria-labelledby="samaritan" className="max-w-[78ch] space-y-3">
+      <section aria-labelledby="samaritan" className={`${WIDE} space-y-3`}>
         <h2 id="samaritan" className="text-[1.15rem] font-bold">
           Samaritan, a scripted example agent
         </h2>
-        <p>
+        <p className={PROSE}>
           Samaritan is a short script in the repository (<code className="num">scripts/samaritan.ts</code>), not a language model. It reads the manifest, uses only MCP, checks its allowance, gives $5 or whatever is left, prints the PayPal link
           for its person, and once the payment is approved checks its receipt by recomputing the audit hash chain itself before asking the server&apos;s own check.
         </p>
@@ -197,17 +201,17 @@ samaritan: the server's /api/audit/verify agrees: intact chain of 24 entries
 samaritan: this shows my donation is recorded in the audit log; it does not show where each dollar goes, because the pool is shared
 samaritan: so far Firstlight has paid $680.00 to 7 people from the pool`}
         />
-        <p className="text-[0.92rem] text-ink-muted">
+        <p className={`${PROSE} text-[0.92rem] text-ink-muted`}>
           A receipt proves the donation is in Firstlight&apos;s audit log and shows the pool&apos;s totals. It does not prove where each dollar went: the pool is shared, so no donation is earmarked to a recipient.
         </p>
       </section>
 
-      <section className="panel overflow-hidden" aria-labelledby="agent-feed">
+      <section className={`panel ${WIDE} overflow-hidden`} aria-labelledby="agent-feed">
         <div className="border-b border-line-soft px-5 py-4">
           <h2 id="agent-feed" className="text-[1.05rem] font-bold">
             Recent agent donations
           </h2>
-          <p className="max-w-[72ch] text-[0.92rem] text-ink-muted">
+          <p className={`${PROSE} text-[0.92rem] text-ink-muted`}>
             Shown under each allowance&apos;s label. Messages are shown as plain text and never reach the payout agent. Verifying recomputes the audit hash chain in your browser.
           </p>
         </div>
@@ -267,7 +271,7 @@ function AllowanceSection({ origin }: { origin: string }) {
 
   return (
     <section aria-labelledby="allowance" className="space-y-4">
-      <div className="max-w-[78ch]">
+      <div className={PROSE}>
         <h2 id="allowance" className="text-[1.15rem] font-bold">
           Give an agent an allowance
         </h2>
@@ -277,51 +281,53 @@ function AllowanceSection({ origin }: { origin: string }) {
         </p>
       </div>
 
-      <form className="panel max-w-[78ch] space-y-4 p-5" onSubmit={create} aria-labelledby="allowance">
-        <div className="grid gap-1">
+      <form className={`panel ${WIDE} space-y-4 p-5`} onSubmit={create} aria-labelledby="allowance">
+        <div className="grid gap-1 md:max-w-[30rem]">
           <label htmlFor={labelId} className="text-[0.875rem] text-ink-muted">
             Who is the agent? (shown publicly with its donations)
           </label>
           <input id={labelId} className="field" required maxLength={64} value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Ana's assistant" />
           <p className="text-[0.85rem] text-ink-dim">Up to 64 letters, digits, spaces and . _ : @ + -</p>
         </div>
-        <fieldset>
-          <legend className="mb-2 text-[0.875rem] text-ink-muted">Cap (USD)</legend>
-          <div className="flex flex-wrap gap-2">
-            {CAPS.map((c) => (
-              <button type="button" key={c} aria-pressed={cap === c} onClick={() => setCap(c)} className={`btn num ${cap === c ? 'border-black bg-black text-white hover:border-black' : ''}`}>
-                ${c}
-              </button>
-            ))}
-            <label htmlFor={capId} className="sr-only">
-              Other cap
+        <div className="grid gap-4 md:grid-cols-[auto_minmax(0,14rem)] md:items-start md:gap-8">
+          <fieldset>
+            <legend className="mb-2 text-[0.875rem] text-ink-muted">Cap (USD)</legend>
+            <div className="flex flex-wrap gap-2">
+              {CAPS.map((c) => (
+                <button type="button" key={c} aria-pressed={cap === c} onClick={() => setCap(c)} className={`btn num ${cap === c ? 'border-black bg-black text-white hover:border-black' : ''}`}>
+                  ${c}
+                </button>
+              ))}
+              <label htmlFor={capId} className="sr-only">
+                Other cap
+              </label>
+              <input
+                id={capId}
+                className="field num w-28"
+                type="number"
+                min={1}
+                max={100}
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Other"
+                value={cap === '' || CAPS.includes(cap) ? '' : cap}
+                onChange={(e) => setCap(e.target.value === '' ? '' : Number(e.target.value))}
+              />
+            </div>
+            <p className="mt-1.5 text-[0.85rem] text-ink-dim">$1 to $100 in total, across all of the agent&apos;s donations.</p>
+          </fieldset>
+          <div className="grid gap-1">
+            <label htmlFor={expiryId} className="text-[0.875rem] text-ink-muted">
+              Expires after
             </label>
-            <input
-              id={capId}
-              className="field num w-28"
-              type="number"
-              min={1}
-              max={100}
-              step="0.01"
-              inputMode="decimal"
-              placeholder="Other"
-              value={cap === '' || CAPS.includes(cap) ? '' : cap}
-              onChange={(e) => setCap(e.target.value === '' ? '' : Number(e.target.value))}
-            />
+            <select id={expiryId} className="field" value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+              {EXPIRY.map((x) => (
+                <option key={x.hours} value={x.hours}>
+                  {x.label}
+                </option>
+              ))}
+            </select>
           </div>
-          <p className="mt-1.5 text-[0.85rem] text-ink-dim">$1 to $100 in total, across all of the agent&apos;s donations.</p>
-        </fieldset>
-        <div className="grid gap-1 sm:max-w-xs">
-          <label htmlFor={expiryId} className="text-[0.875rem] text-ink-muted">
-            Expires after
-          </label>
-          <select id={expiryId} className="field" value={hours} onChange={(e) => setHours(Number(e.target.value))}>
-            {EXPIRY.map((x) => (
-              <option key={x.hours} value={x.hours}>
-                {x.label}
-              </option>
-            ))}
-          </select>
         </div>
         <button className="btn btn-go h-10 px-5" disabled={busy || cap === '' || !label.trim()}>
           {busy && !created ? 'Creating…' : 'Create allowance'}
@@ -345,7 +351,7 @@ function CreatedAllowance({ a, origin, revoked, onRevoke, busy }: { a: Allowance
   -d '{"allowance_token": "${a.allowanceToken}"}'`;
 
   return (
-    <div className="panel max-w-[78ch] space-y-4 p-5" aria-live="polite">
+    <div className={`panel ${WIDE} space-y-4 p-5`} aria-live="polite">
       {revoked ? (
         <Notice>This allowance is revoked. The agent can&apos;t donate with it any more, and donations still waiting for approval under it were cancelled.</Notice>
       ) : (

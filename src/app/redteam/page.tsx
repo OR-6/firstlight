@@ -4,8 +4,9 @@ import { useState } from 'react';
 import type { ScenarioResult, SuiteReport } from '@/redteam/scenarios';
 import { Notice, VerdictChip, usd } from '@/ui/format';
 import { ApiError, call, useApi } from '@/ui/live';
-import { RULE_NAMES } from '@/ui/RuleDrawer';
-import type { RuleId } from '@/firewall/types';
+import type { RuleResult } from '@/firewall/types';
+import { plainRule } from '@/ui/plain';
+import { ruleTitle } from '@/ui/RuleDrawer';
 
 type Scenario = { id: string; title: string; attempted: string };
 
@@ -134,11 +135,12 @@ function Result({ r }: { r: ScenarioResult }) {
               {fired.slice(0, 14).map((f, i) => (
                 <li key={i}>
                   <span className="font-semibold">{f.recipientId === 'plan' ? 'Whole plan' : f.recipientId}</span>{' '}
-                  <span className="text-ink-dim">
-                    {f.ruleId} {RULE_NAMES[f.ruleId as RuleId]}
+                  <span className="text-ink-dim" title={f.reasonCode}>
+                    {f.ruleId} {ruleTitle({ id: f.ruleId, reasonCode: f.reasonCode })}
                   </span>
+                  {/* Plain words; the firewall's raw detail (field paths and all) is in the tooltip. */}
                   <p className="break-words text-ink-muted" title={f.detail}>
-                    {f.detail.length > 110 ? `${f.detail.slice(0, 110)}…` : f.detail}
+                    {firedText(f)}
                   </p>
                 </li>
               ))}
@@ -173,6 +175,13 @@ function Result({ r }: { r: ScenarioResult }) {
       </div>
     </section>
   );
+}
+
+/** A fired rule in plain words, cut at a word boundary if the firewall's fallback text is long. */
+function firedText(f: Pick<RuleResult, 'reasonCode' | 'detail'>): string {
+  const t = plainRule(f);
+  if (t.length <= 180) return t;
+  return `${t.slice(0, 180).replace(/\s+\S*$/, '')}…`;
 }
 
 function Suite({ s }: { s: SuiteReport }) {

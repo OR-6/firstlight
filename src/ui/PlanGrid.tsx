@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import type { ItemVerdict } from '@/firewall/types';
 import type { PlanView } from '@/server/views';
 import { StatusChip, itemStatus, usd } from './format';
-import { noteLang } from './plain';
+import { flagText, noteLang } from './plain';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -76,7 +76,7 @@ export function PlanGrid({ plan, onOpen }: { plan: PlanView; onOpen: (row: PlanR
             <span>
               <span className={changed ? 'font-bold text-block' : 'font-semibold'}>{p.data.allowedTier ?? 'None'}</span>
               {changed ? <span className="text-block">, asked for {p.data.requestedTier}</span> : null}
-              {p.data.flags.length ? <span className="ml-2 text-[0.8rem] text-ink-dim">{p.data.flags.join(', ').replaceAll('_', ' ')}</span> : null}
+              {p.data.flags.length ? <span className="ml-2 text-[0.8rem] text-ink-dim">{flagText(p.data.flags)}</span> : null}
             </span>
           );
         },
@@ -163,6 +163,8 @@ function TierPlate({ row }: { row: PlanRow }) {
   );
 }
 
+const sentenceCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
 /** Below 768 px: one card per recipient instead of the grid. Tapping a card opens the same rule drawer. */
 function RecipientCards({ plan, rows, onOpen }: { plan: PlanView; rows: PlanRow[]; onOpen: (row: PlanRow) => void }) {
   if (rows.length === 0) return <p className="p-5 text-ink-muted md:hidden">No recipients in this plan.</p>;
@@ -191,6 +193,7 @@ function RecipientCards({ plan, rows, onOpen }: { plan: PlanView; rows: PlanRow[
                 <TierPlate row={r} />
                 <StatusChip label={st.label} tone={st.tone} />
               </span>
+              {r.flags.length ? <span className="mt-1 block text-[0.85rem] text-ink-muted">{sentenceCase(flagText(r.flags))}</span> : null}
               {r.note ? (
                 <span className="mt-2 block text-[0.88rem] leading-snug text-ink-muted" lang={noteLang(r, r.locale)}>
                   {r.note}
