@@ -31,7 +31,7 @@ On https://firstlight.onrender.com (the first request after idling can take abou
 6. **Run your own copy:** [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OR-6/firstlight) — replay mode needs no AI key; payouts and donations need your own PayPal sandbox credentials.
 7. **[How it works](https://firstlight.onrender.com/how-it-works)** explains who uses which screen and how households are enrolled; **Agents** shows how another AI agent donates over MCP.
 
-- **Video:** _added after recording_
+- **Video (2:42):** https://youtu.be/91YHURW1xL0
 - Spec: [SPEC.md](SPEC.md), decisions: [docs/decisions.md](docs/decisions.md), design: [DESIGN.md](DESIGN.md), [docs/SECURITY.md](docs/SECURITY.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Security model: capability restriction beats detection
