@@ -38,3 +38,48 @@ describe('firewall purity', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('firewall purity: everything it imports', () => {
+  // Every module reachable from src/firewall, followed through relative imports.
+  // Outside packages are allowed only from a short list.
+  const ALLOWED_PACKAGES = new Set(['zod', 'node:crypto']);
+  const SRC = join(import.meta.dirname, '..', 'src');
+
+  function reachable(): { files: string[]; packages: string[] } {
+    const seen = new Set<string>();
+    const packages = new Set<string>();
+    const queue = files(ROOT);
+    while (queue.length) {
+      const f = queue.pop()!;
+      if (seen.has(f)) continue;
+      seen.add(f);
+      for (const m of readFileSync(f, 'utf8').matchAll(/(?:import|export)[^'"]*from\s+['"]([^'"]+)['"]/g)) {
+        const spec = m[1]!;
+        if (!spec.startsWith('.')) {
+          packages.add(spec);
+          continue;
+        }
+        const base = join(f, '..', spec);
+        const file = [`${base}.ts`, join(base, 'index.ts')].find((p) => {
+          try {
+            return statSync(p).isFile();
+          } catch {
+            return false;
+          }
+        });
+        if (file) queue.push(file);
+      }
+    }
+    return { files: [...seen], packages: [...packages] };
+  }
+
+  it('only imports allowed packages, transitively', () => {
+    expect(reachable().packages.filter((p) => !ALLOWED_PACKAGES.has(p))).toEqual([]);
+  });
+
+  it.each(FORBIDDEN.slice(0, 5))('no %s anywhere the firewall reaches', (_what, pattern) => {
+    const outside = reachable().files.filter((f) => !f.startsWith(ROOT));
+    expect(outside.every((f) => f.startsWith(SRC))).toBe(true);
+    expect(outside.filter((f) => pattern.test(readFileSync(f, 'utf8')))).toEqual([]);
+  });
+});

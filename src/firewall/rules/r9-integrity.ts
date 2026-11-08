@@ -56,11 +56,11 @@ const EMAIL_LIKE = /[^\s@]+@[^\s@]+\.[^\s@]+/u;
 const PHONE_LIKE = /(?:\+?\p{Nd}[\s().-]?){7,}/u;
 
 /**
- * R9 (item level) — the payout note is the one agent-written string that
- * reaches a recipient. A compromised agent could use it to phish ("call this
- * number to unlock your funds"), so notes that are too long or contain links,
- * addresses, phone numbers or invisible characters are replaced with a fixed
- * fallback and the plan goes to a human.
+ * R9 (item level) — checks the agent's drafted note. Since D71 the draft is
+ * shown to the reviewer only and PayPal delivers a fixed template, but a
+ * note carrying links, addresses, phone numbers or invisible characters is
+ * still a sign of a compromised agent, so it is replaced in the reviewer's
+ * view and the plan goes to a human.
  */
 export function r9Note(rawNote: string, config: FirewallConfig): { result: RuleResult; note: string } {
   const note = rawNote.trim();

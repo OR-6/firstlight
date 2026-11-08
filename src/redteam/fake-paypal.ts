@@ -8,7 +8,7 @@ import { PAYPAL_SANDBOX_BASE_URL, PayPalClient, type FetchLike } from '../paypal
  */
 export type SimulatedPayPal = {
   client: PayPalClient;
-  sent: { receiver: string; value: string; senderItemId: string; requestId: string }[];
+  sent: { receiver: string; value: string; senderItemId: string; note: string; requestId: string }[];
   requests: { method: string; path: string; requestId?: string }[];
   failNextCreate?: { status: number; body: unknown };
 };
@@ -36,9 +36,9 @@ export function simulatedPayPal(finalItemStatus = 'SUCCESS'): SimulatedPayPal {
       }
       const existing = requestId ? byRequestId.get(requestId) : undefined;
       if (existing) return reply(201, { batch_header: { payout_batch_id: existing, batch_status: 'PENDING' } });
-      const body = JSON.parse(init.body!) as { items: { receiver: string; amount: { value: string }; sender_item_id: string }[] };
+      const body = JSON.parse(init.body!) as { items: { receiver: string; amount: { value: string }; sender_item_id: string; note?: string }[] };
       const id = `SIMBATCH${batches.size + 1}`;
-      const items = body.items.map((i) => ({ receiver: i.receiver, value: i.amount.value, senderItemId: i.sender_item_id }));
+      const items = body.items.map((i) => ({ receiver: i.receiver, value: i.amount.value, senderItemId: i.sender_item_id, note: i.note ?? '' }));
       batches.set(id, { items, polls: 0 });
       if (requestId) byRequestId.set(requestId, id);
       for (const i of items) sim.sent.push({ ...i, requestId: requestId ?? '' });

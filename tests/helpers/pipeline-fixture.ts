@@ -50,13 +50,13 @@ export type FakePayPal = SimulatedPayPal;
 /** Shared in-process PayPal simulator (records what would have been sent). */
 export const fakePayPal = simulatedPayPal;
 
-export function makePipeline(opts: { llm: ScriptedLlm; sentinelLlm?: ScriptedLlm | null; poolCents?: number; clock?: () => number }) {
+export function makePipeline(opts: { llm: ScriptedLlm; sentinelLlm?: ScriptedLlm | null; poolCents?: number; clock?: () => number; onlyRecipients?: string[] }) {
   let now = NOW;
   const pipeline = new Pipeline({
     db: openDb(),
     llm: opts.llm,
     sentinelLlm: opts.sentinelLlm ?? null,
-    registry: loadRegistry(),
+    registry: opts.onlyRecipients ? loadRegistry().filter((r) => opts.onlyRecipients!.includes(r.recipientId)) : loadRegistry(),
     config: defaultFirewallConfig(),
     clock: opts.clock ?? (() => now),
   });

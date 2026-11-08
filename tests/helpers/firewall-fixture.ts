@@ -112,3 +112,13 @@ export const CLEAN_ITEMS: ItemInput[] = [
   { recipientId: 'rcp_a10', tier: 'A' },
   { recipientId: 'rcp_c250', tier: 'C' },
 ];
+
+/**
+ * The context with the registry cut down to the given recipients. Rule tests
+ * that submit a hand-picked subset use it so R12 (nobody eligible left out)
+ * doesn't flag the households the test deliberately didn't include.
+ */
+export function onlyPlanned(c: FirewallContext, items: ReadonlyArray<{ recipientId: string }>): FirewallContext {
+  const ids = new Set(items.map((i) => i.recipientId));
+  return { ...c, registry: c.registry.filter((r) => ids.has(r.recipientId)) };
+}

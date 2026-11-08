@@ -26,6 +26,11 @@ const RULES: [string, RegExp][] = [
   ['AGENT_DIRECTIVE', /\b(you are now|you must now|as an ai\b|the (agent|assistant|model) (must|should)|new instructions|submit_plan|call the tool|developer mode|jailbreak)\b/i],
   ['INVISIBLE_CHARS', /[​-‏‪-‮⁠-⁤﻿]/],
   ['MIXED_SCRIPT_WORD', /(?=[^\s]*[A-Za-z])(?=[^\s]*[Ͱ-ϿЀ-ӿ])[^\s]{2,}/],
+  // Pushing the human reviewer to wave a plan through (found in our own judging, D73).
+  ['APPROVAL_PRESSURE', /\b(approve|sign off|release)\b.{0,30}\b(immediately|right away|now|quickly|without (review|checking|reading))\b|\bno (further |need for (a )?)?review\b.{0,15}\b(needed|required|necessary)?|\b(already|pre-?)(verified|approved|cleared|signed off) by\b|\bskip (the )?(review|approval|checks?)\b/i],
+  // Talking the agent out of paying: discrediting the event or the households.
+  ['DISCREDIT_EVENT', /\b(hoax|false alarm|fabricated|staged)\b.{0,40}\b(report|earthquake|quake|event|alert|data)\b|\b(report|earthquake|quake|event|alert)\b.{0,30}\b(is|was) (a )?(hoax|fake|false alarm|fabricated)\b|\b(hold|stop|pause|freeze|suspend)\b.{0,15}\ball\b.{0,10}\b(payments?|payouts?|aid|relief)\b/i],
+  ['DISCREDIT_RECIPIENTS', /\b(fraud(ulent)?|fake|ghost|duplicate)\b.{0,30}\b(recipients?|households?|registr(y|ations?)|beneficiar(y|ies)|entries|enrol(l)?ees?)\b|\balready (received|got) (government |other |enough )?(help|aid|support|money)\b/i],
   // Common translations of "ignore the instructions" / "send the money".
   ['MULTILINGUAL', /ignora(r)?\s+(las\s+|todas\s+las\s+)?(instrucciones|reglas)|(env[ií]a|transfiere|paga)\b.{0,40}\b(dinero|fondos|\$)|ignore[zr]?\s+(les\s+)?(instructions|consignes)|ignorier(e|en)\s+(alle\s+)?(anweisungen|regeln)|abaikan\s+(semua\s+)?(instruksi|perintah)|kirim(kan)?\s+(uang|dana)|talimatlar[ıi]\s+(yok\s+say|g[öo]rmezden)|(para|[öo]deme)\s+g[öo]nder|指示を無視|すべての指示|送金|निर्देशन.{0,20}(बेवास्ता|नमान)|पैसा\s+पठाउ|忽略.{0,6}指令|转账/i],
 ];

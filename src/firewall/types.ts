@@ -9,7 +9,7 @@ export const TIERS_HIGH_TO_LOW: readonly Tier[] = ['A', 'B', 'C'];
 
 export type PagerAlert = 'green' | 'yellow' | 'orange' | 'red';
 
-export type RuleId = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10';
+export type RuleId = 'R1' | 'R2' | 'R3' | 'R4' | 'R5' | 'R6' | 'R7' | 'R8' | 'R9' | 'R10' | 'R12';
 export type RuleStatus = 'pass' | 'warn' | 'block';
 export type VerdictKind = 'ALLOW' | 'REQUIRE_APPROVAL' | 'BLOCK';
 
@@ -69,6 +69,11 @@ export type ReasonCode =
   | 'AGENT_ESCALATED'
   | 'NOTE_OK'
   | 'NOTE_REPLACED'
+  // R12 coverage floor
+  | 'ALL_ELIGIBLE_COVERED'
+  | 'ELIGIBLE_OMITTED'
+  | 'TIER_BELOW_BAND'
+  | 'HOLD_ON_MET_TRIGGER'
   // R10 approval
   | 'AUTO_APPROVABLE'
   | 'OVER_APPROVAL_THRESHOLD'
@@ -172,6 +177,11 @@ export type FirewallConfig = {
   maxNoteChars: number;
   /** Used in place of an agent note that fails hygiene checks. */
   fallbackNote: string;
+  /**
+   * The message PayPal delivers with each payout, by locale ({amount} is filled in).
+   * Fixed text a human signed off on: agent-written text never reaches a recipient.
+   */
+  payoutNotes: Record<string, string>;
 };
 
 export type FirewallContext = {
@@ -193,8 +203,10 @@ export type ItemVerdict = {
   allowedTier: Tier | null;
   distanceKm: number | null;
   amountCents: number;
-  /** The note that would be sent (agent's, or the fallback if the agent's failed checks). */
+  /** The message PayPal will deliver: the fixed template for the recipient's locale. */
   note: string;
+  /** What the agent drafted (after hygiene checks). Shown to the reviewer only; never sent. */
+  agentNote: string;
   verdict: VerdictKind;
   ruleTrace: RuleResult[];
 };

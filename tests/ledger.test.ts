@@ -4,7 +4,7 @@ import { openDb } from '../src/ledger/db';
 import { InsufficientPoolError, Ledger, normaliseItemStatus } from '../src/ledger/ledger';
 import { EventStore } from '../src/signals/event-store';
 import { parseUsgsFeature, toFirewallEvent } from '../src/signals/usgs';
-import { CLEAN_ITEMS, EVENT_ID, NOW, ctx, plan } from './helpers/firewall-fixture';
+import { CLEAN_ITEMS, EVENT_ID, NOW, ctx, plan, onlyPlanned } from './helpers/firewall-fixture';
 import panama from '../fixtures/events/us6000u18k.fdsn.json' with { type: 'json' };
 
 function setup(pool = 1_000_00) {
@@ -100,14 +100,14 @@ describe('pool ledger', () => {
     if (!ev.ok) throw new Error(ev.error);
     new EventStore(db).upsert(ev.value);
 
-    const c = ctx({ event: toFirewallEvent(ev.value), ledger: ledger.snapshot() });
+    const c = onlyPlanned(ctx({ event: toFirewallEvent(ev.value), ledger: ledger.snapshot() }), CLEAN_ITEMS);
     const v1 = evaluatePlan(plan(CLEAN_ITEMS), c);
     expect(v1.overall).toBe('ALLOW');
     ledger.reservePayoutBatch(batch({ paypalRequestId: v1.paypalRequestId!, verdictDigest: v1.digest, items: payableItems(v1) }));
 
     const snap = ledger.snapshot();
     expect(snap.paidEvents.map((e) => e.eventId)).toEqual([EVENT_ID]);
-    const v2 = evaluatePlan(plan(CLEAN_ITEMS), ctx({ event: toFirewallEvent(ev.value), ledger: snap }));
+    const v2 = evaluatePlan(plan(CLEAN_ITEMS), onlyPlanned(ctx({ event: toFirewallEvent(ev.value), ledger: snap }), CLEAN_ITEMS));
     expect(v2.overall).toBe('BLOCK');
     expect(v2.items.flatMap((i) => i.ruleTrace.map((r) => r.reasonCode))).toContain('ALREADY_PAID_FOR_EVENT');
   });

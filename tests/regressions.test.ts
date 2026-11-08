@@ -38,7 +38,7 @@ describe('re-assessing an unchanged event', () => {
 describe('execute-time re-check', () => {
   it('refuses an ALLOW plan whose fresh verdict now needs a human', async () => {
     const plan = { ...GOOD_PLAN, items: [GOOD_PLAN.items[0]] };
-    const { pipeline } = makePipeline({ llm: scriptedAgent(plan) });
+    const { pipeline } = makePipeline({ llm: scriptedAgent(plan), onlyRecipients: [GOOD_PLAN.items[0]!.recipientId] });
     const a = await pipeline.assess(replayInput());
     expect(a.verdict?.overall).toBe('ALLOW');
     // The pool shrinks so the same plan would now hit the soft budget limit (R5 warning).

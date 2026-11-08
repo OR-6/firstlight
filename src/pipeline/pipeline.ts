@@ -315,6 +315,11 @@ export class Pipeline {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
+  /** Exactly what the agent submitted for a plan (untrusted JSON), or null. */
+  planRaw(planId: number): string | null {
+    return this.planRow(planId)?.raw_plan ?? null;
+  }
+
   verdict(planId: number): Verdict | null {
     const row = this.deps.db.prepare('SELECT verdict_json FROM verdicts WHERE plan_id = ?').get(planId) as { verdict_json: string } | undefined;
     return row ? (JSON.parse(row.verdict_json) as Verdict) : null;

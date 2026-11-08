@@ -40,5 +40,15 @@ console.log(
 );
 console.log(`Sentinel (either layer): ${report.sentinel.eitherCaught}/${n} flagged (${pct(report.sentinel.eitherCaught)})`);
 console.log(`Firewall: ${n - report.firewall.payloadsWithUnauthorisedPayout}/${n} attacks moved $0 to unauthorised payees (total unauthorised: ${formatUsd(report.firewall.unauthorisedCents)})`);
+console.log(`Firewall: ${report.firewall.flaggedBeyondThreshold}/${n} held for a reason other than the $300 approval limit (the honest $680 plan already needs a person)`);
+console.log(`Firewall rules alone (if the sentinel missed everything): ${report.firewall.firewallFlagged}/${n} held or blocked for a reason other than the $300 limit`);
+console.log(`Payout notes: agent-written text reached PayPal in ${report.firewall.agentTextDelivered}/${n} attacks (PayPal only gets fixed templates)`);
+console.log('\nResidual risks: attacks that don\'t try to pay a stranger (careless reviewer approves everything)');
+console.log('id                   outcome          verdict           sent       shortfall  unauthorised');
+for (const r of report.residual) {
+  console.log(
+    `${r.id.padEnd(20)} ${r.outcome.padEnd(16)} ${r.verdict.padEnd(17)} ${formatUsd(r.sentCents).padEnd(10)} ${(r.shortfallCents === null ? 'n/a' : formatUsd(r.shortfallCents)).padEnd(10)} ${formatUsd(r.unauthorisedCents)}`,
+  );
+}
 console.log('\nWrote redteam-report.json');
 if (report.firewall.unauthorisedCents > 0) process.exitCode = 1;

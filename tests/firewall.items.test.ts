@@ -66,7 +66,7 @@ const rows: Row[] = [
   { name: 'R2 pass: vulnerability uplift B-band → A', items: [{ recipientId: 'rcp_b120_vuln', tier: 'A' }], verdict: 'ALLOW', amountCents: 120_00, allowedTier: 'A', code: 'TIER_WITHIN_BAND' },
   { name: 'R2 downgrade: uplift is one tier only (C-band vuln asks A → B)', items: [{ recipientId: 'rcp_c250_vuln', tier: 'A' }], verdict: 'REQUIRE_APPROVAL', amountCents: 80_00, allowedTier: 'B', code: 'TIER_DOWNGRADED' },
   { name: 'R2 downgrade: C-band asks A → C', items: [{ recipientId: 'rcp_c250', tier: 'A' }], verdict: 'REQUIRE_APPROVAL', amountCents: 40_00, allowedTier: 'C', code: 'TIER_DOWNGRADED' },
-  { name: 'R2 pass: agent may choose lower than allowed (A-band, tier C)', items: [{ recipientId: 'rcp_a10', tier: 'C' }], verdict: 'ALLOW', amountCents: 40_00, allowedTier: 'C', code: 'TIER_WITHIN_BAND' },
+  { name: 'R2 pass, R12 warn: agent picks lower than allowed (A-band, tier C) → a person reviews', items: [{ recipientId: 'rcp_a10', tier: 'C' }], verdict: 'REQUIRE_APPROVAL', amountCents: 40_00, allowedTier: 'C', code: 'TIER_BELOW_BAND' },
   { name: 'R2 pass: exactly at 300 km max radius', items: [{ recipientId: 'rcp_300', tier: 'C' }], ctx: withRecipients(recipient('rcp_300', 300)), verdict: 'ALLOW', amountCents: 40_00, allowedTier: 'C', code: 'TIER_WITHIN_BAND' },
   { name: 'R2 block: 300.1 km is outside the radius', items: [{ recipientId: 'rcp_300p', tier: 'C' }], ctx: withRecipients(recipient('rcp_300p', 300.1)), verdict: 'BLOCK', amountCents: 0, allowedTier: null, code: 'OUTSIDE_MAX_RADIUS' },
   { name: 'R2 block: 400 km outside radius', items: [{ recipientId: 'rcp_far400', tier: 'C' }], verdict: 'BLOCK', amountCents: 0, code: 'OUTSIDE_MAX_RADIUS' },
@@ -147,7 +147,11 @@ const rows: Row[] = [
 
 describe('firewall item rules', () => {
   it.each(rows)('$name', (row) => {
-    const v = evaluatePlan(plan(row.items), ctx(row.ctx));
+    // Item rules are tested one recipient at a time, so R12 (coverage) only
+    // sees the recipients in the plan; tests/firewall.coverage.test.ts covers R12.
+    const c = ctx(row.ctx);
+    const planned = new Set(row.items.map((i) => i.recipientId));
+    const v = evaluatePlan(plan(row.items), { ...c, registry: c.registry.filter((r) => planned.has(r.recipientId)) });
     const item = v.items[row.expectIndex ?? 0];
     expect(item, 'item verdict exists').toBeDefined();
     if (!item) return;
@@ -155,7 +159,7 @@ describe('firewall item rules', () => {
     expect(item.amountCents).toBe(row.amountCents);
     if (row.allowedTier !== undefined) expect(item.allowedTier).toBe(row.allowedTier);
     expect(item.ruleTrace.map((r) => r.reasonCode)).toContain(row.code);
-    if (row.note !== undefined) expect(item.note).toBe(row.note);
+    if (row.note !== undefined) expect(item.agentNote).toBe(row.note);
     if (item.verdict === 'BLOCK') expect(item.amountCents).toBe(0);
   });
 });

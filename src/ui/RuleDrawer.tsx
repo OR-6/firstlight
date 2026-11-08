@@ -17,6 +17,7 @@ export const RULE_NAMES: Record<RuleId, string> = {
   R8: 'Earthquake confirmed by two sources',
   R9: 'Plan integrity and warnings',
   R10: 'Needs a human?',
+  R12: 'Nobody eligible left out or underpaid',
 };
 
 export function RuleDrawer({ row, onClose }: { row: PlanRow | null; onClose: () => void }) {

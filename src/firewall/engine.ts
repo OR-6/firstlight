@@ -11,6 +11,8 @@ import { r7Velocity } from './rules/r7-velocity';
 import { r8Trigger } from './rules/r8-trigger';
 import { r9Note, r9PlanIntegrity } from './rules/r9-integrity';
 import { r10Approval } from './rules/r10-approval';
+import { r12Coverage } from './rules/r12-coverage';
+import { payoutNoteFor } from './notes';
 import { sameDisasterEventIds } from './rules/shared';
 import type { FirewallContext, ItemVerdict, RuleResult, RuleStatus, Verdict, VerdictKind } from './types';
 
@@ -44,6 +46,7 @@ export function evaluatePlan(rawPlan: unknown, ctx: FirewallContext): Verdict {
       distanceKm: null,
       amountCents: 0,
       note: ctx.config.fallbackNote,
+      agentNote: '',
       verdict: 'BLOCK',
       ruleTrace: trace,
     };
@@ -75,7 +78,8 @@ export function evaluatePlan(rawPlan: unknown, ctx: FirewallContext): Verdict {
 
     const r9 = r9Note(item.note, ctx.config);
     trace.push(r9.result);
-    out.note = r9.note;
+    out.agentNote = r9.note;
+    out.note = payoutNoteFor(r1.recipient.locale, r3.amountCents, ctx.config);
     out.amountCents = r3.amountCents;
   }
 
@@ -85,6 +89,8 @@ export function evaluatePlan(rawPlan: unknown, ctx: FirewallContext): Verdict {
   for (const i of items) if (itemBlocked(i)) i.amountCents = 0;
 
   planRules.push(r5Budget(total, ctx));
+  const triggerMet = planRules.some((r) => r.id === 'R8' && r.status === 'pass');
+  planRules.push(...r12Coverage({ decision: plan?.decision ?? null, items, triggerMet, sameDisasterIds: twins }, ctx));
   const anyWarn = planRules.some((r) => r.status === 'warn') || items.some((i) => i.ruleTrace.some((r) => r.status === 'warn'));
   planRules.push(
     r10Approval({ payableCount: payable.length, blockedCount: items.length - payable.length, totalCents: total, anyWarn }, ctx),

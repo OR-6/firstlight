@@ -26,6 +26,15 @@ export function defaultFirewallConfig(): FirewallConfig {
     sameDisaster: { radiusKm: 100, windowHours: 48 },
     maxNoteChars: 200,
     fallbackNote: 'Firstlight emergency relief payment (SANDBOX test). No action is needed.',
+    // Max 200 characters each (PayPal Payouts note limit, enforced in src/paypal/payouts.ts).
+    payoutNotes: {
+      en: 'Firstlight earthquake relief: {amount}. No action needed. Questions: your local relief partner. We never ask for a password, code or fee. (SANDBOX)',
+      es: 'Ayuda de Firstlight por el terremoto: {amount}. No tiene que hacer nada. Dudas: su organización local de ayuda. Nunca pedimos contraseñas, códigos ni pagos. (SANDBOX)',
+      ne: 'भूकम्प राहत Firstlight: {amount}। केही गर्नु पर्दैन। प्रश्न भए स्थानीय राहत साझेदारलाई सोध्नुहोस्। हामी कहिल्यै पासवर्ड, कोड वा शुल्क माग्दैनौं। (SANDBOX)',
+      id: 'Bantuan gempa Firstlight: {amount}. Tidak perlu melakukan apa pun. Pertanyaan: mitra bantuan setempat. Kami tidak pernah meminta kata sandi, kode, atau biaya. (SANDBOX)',
+      ja: 'Firstlight 地震支援金 {amount}。手続きは不要です。ご質問は地域の支援団体へ。パスワード・コード・手数料を求めることはありません。(SANDBOX)',
+      tr: 'Firstlight deprem yardımı: {amount}. Bir şey yapmanız gerekmez. Sorular: yerel yardım ortağınız. Asla şifre, kod veya ücret istemeyiz. (SANDBOX)',
+    },
   };
 }
 

@@ -179,7 +179,8 @@ describe('pipeline: assess → approve → execute → poll', () => {
 
   it('a small ALLOW plan executes without approval', async () => {
     const plan = { ...GOOD_PLAN, items: [GOOD_PLAN.items[0], GOOD_PLAN.items[6]] }; // $160
-    const { pipeline } = makePipeline({ llm: scriptedAgent(plan) });
+    // Only these two households are enrolled, so R12 has nobody else to miss.
+    const { pipeline } = makePipeline({ llm: scriptedAgent(plan), onlyRecipients: plan.items.map((i) => i!.recipientId) });
     const a = await pipeline.assess(replayInput());
     expect(a.verdict?.overall).toBe('ALLOW');
     const pp = fakePayPal();
