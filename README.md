@@ -5,7 +5,7 @@ The model proposes; the code disposes.
 
 > **Runs in the PayPal sandbox: no real money moves.** Recipients are synthetic test accounts.
 
-<!-- HERO -->
+![Mission control after an assessment: the money's path from signal to recipients, the M7.7 Panama earthquake confirmed by USGS and EMSC, and the households on the map](docs/img/mission-control.png)
 
 **The problem.** Cash that arrives early does more good than the same cash later. When WFP sent cash to Bangladeshi households about 4 days before the 2020 flood peak (some 100 days earlier than its 2019 response), they were 36% less likely to go a day without eating ([WFP](https://www.wfp.org/publications/acting-flood-protect-most-vulnerable-independent-review-wfps-anticipatory-cash), [Anticipation Hub](https://www.anticipation-hub.org/news/generating-evidence-on-the-impact-of-wfps-anticipatory-cash-transfers-ahead-of-severe-river-floods-in-bangladesh)). Earthquakes can't be forecast, so the fastest honest version is to pay households enrolled *before* the quake within minutes of it being confirmed. Most relief funds wait for applications; Firstlight pays enrolled households when the quake is confirmed.
 

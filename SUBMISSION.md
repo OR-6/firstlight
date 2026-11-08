@@ -20,47 +20,52 @@ Lead with the relief, not the firewall: about 160 entries this year pitch an "ag
 
 ## 3. Elevator pitch (short description, ~280 characters)
 
-> When a strong earthquake is confirmed near families an aid organisation has already enrolled, Firstlight's Claude agent drafts relief payouts within minutes, and nobody has to apply. A deterministic firewall checks every payment before PayPal Payouts sends it. Even a hijacked agent can't pay anyone else.
+> When two seismic agencies confirm a strong earthquake near families an aid organisation already enrolled, a Claude agent drafts relief payouts within minutes and nobody has to apply. A deterministic firewall checks every payment before PayPal Payouts sends it, so even a hijacked agent can't change who is paid, how much, or what they're told.
 
 ---
 
 ## 4. Project story (paste into the Devpost sections)
 
 ### Inspiration
-When a major disaster hits, people need cash first, for transport, medicine, somewhere to sleep, and it is the slowest thing to arrive. Programs that pay automatically when a measurable trigger is met (parametric payouts) exist to fix the speed problem. The obvious next step is an AI agent that watches the signals, makes the call, and pays. But nobody should give a language model a payout button: one poisoned news snippet could redirect the money. We wanted to build the version you could actually trust, where the safety comes from the architecture and not from hoping the model behaves.
+Cash that arrives early does more good than the same cash later. When WFP sent cash to Bangladeshi households about four days before the 2020 flood peak, some 100 days earlier than its 2019 response, those households were 36% less likely to go a day without eating (WFP / Centre for Disaster Protection review). Earthquakes can't be forecast, so the fastest honest version is to pay households an aid organisation enrolled *before* the quake, within minutes of it being confirmed. Most relief funds still wait for applications.
+
+An AI agent could make that call in minutes. But nobody should hand a language model a payout button: one poisoned news item could redirect the money. We wanted the version a cash-programme lead at a Red Cross national society or a cash NGO could actually trust, where the safety comes from the architecture, not from hoping the model behaves.
 
 ### What it does
-- Works from real USGS earthquake data, cross-checked against a second agency (EMSC). The hosted demo replays the real M7.7 Panama earthquake of 9 October 2026; a live-feed reader exists (`npm run fetch:usgs`) and switching ingestion to it is next.
-- Built for aid organisations that run cash programmes: the households are enrolled *before* a disaster through field partners, so nobody has to apply after one (see the How it works page).
-- An AI agent assesses whether the trigger is genuinely met, explains its reasoning, assigns each registered recipient a payout tier using distance and vulnerability notes, and writes each notification in the recipient's own language.
-- Every plan then passes through the **Firstlight Firewall**: deterministic code that recomputes eligibility, computes the amounts itself, enforces per-person and per-event caps, blocks duplicates, and sends anything unusual to a human for approval.
-- Approved plans go out as a **PayPal Payouts** batch; **PayPal webhooks** drive live status on the dashboard. Donors, both people and **other AI agents**, fund the relief pool through **PayPal Checkout**. Agents discover Firstlight through a machine-readable manifest and an MCP endpoint, a human approves the payment on PayPal, and the donor agent gets a receipt it can verify against the audit log.
-- A built-in **Red Team console** lets anyone attack it: poisoned news items, a fully compromised agent, spoofed duplicate events, late-registered attackers, over-budget plans.
+- **For aid organisations that run cash programmes.** Households are enrolled through field partners before a disaster. When a strong quake is confirmed near them, nobody has to apply.
+- **Real earthquake data.** USGS, cross-checked against a second agency (EMSC). The hosted demo replays the real M7.7 Panama earthquake of 9 October 2026 so every run is reproducible; `npm run fetch:usgs` reads the live feeds.
+- **A Claude agent drafts the plan.** It decides whether the trigger is genuinely met, explains why, assigns each enrolled household a tier by distance with one tier up for a vulnerability, and flags anything a person should look at.
+- **A deterministic payment firewall decides.** It recomputes eligibility and every amount itself, enforces per-person and per-event caps, blocks duplicates of the same disaster, and checks the opposite direction too: a plan that leaves an eligible household out or pays one too little goes to a person (rule R12).
+- **PayPal pays.** Approved plans go out as one **PayPal Payouts** batch; signature-verified **webhooks** drive live status. Recipients get a fixed, pre-translated note with a help line: the agent can't write to them, so it can't phish them.
+- **People and other AI agents fund the pool** through **PayPal Orders v2**. An agent donates over **MCP**, but only within an allowance a person set (who, how much, until when), a person approves each payment on PayPal, and the agent checks its receipt against the hash-chained audit log itself.
+- **A Red Team console anyone can run**: 27 injection attacks against an agent that obeys every one, plus six attacks that don't try to pay a stranger, shown with their real outcome, including the one we don't stop.
 
 ### How we built it
-- **Capability restriction instead of detection.** The agent can only reference registry IDs and tiers. Its output schema has no email field, no amount field, and no way to name a new payee, so an injection has nowhere to put an attacker. A sentinel classifier adds a second layer, but the guarantee comes from the schema and the firewall.
-- **The agent never holds credentials.** Only the PayPal client module does, and it only acts on firewall-approved plans.
-- **Next.js + TypeScript**, SQLite, AG Grid dashboards, Leaflet map, hosted on Render.
-- **PayPal:** Payouts API (idempotent batches via `PayPal-Request-Id`), Orders v2 for donations, signature-verified webhooks.
-- **AI:** Claude-powered agent with read-only tools and schema-validated output, plus a sentinel pass. Developed with Claude Code.
-- **Tamper-evident audit log:** hash-chained, with a one-click verify.
-- **Replay mode** serves recorded agent runs so anyone can test the full flow, with real sandbox payouts, without API keys.
+- **Capability restriction instead of detection.** The agent can only name registry ids and tiers. Its output has no field for an email, an amount or an account, and its notes are never sent. An injection has nowhere to put an attacker. A sentinel (patterns plus Claude Haiku) adds a second, advisory layer.
+- **The agent never holds credentials.** Only the PayPal module does, and it only acts on verdicts that are in the audit log, after re-running the firewall against the ledger as it is at that moment.
+- **PayPal:** Payouts (idempotent batches via `PayPal-Request-Id`, unknown outcomes resent safely), Orders v2 through the PayPal Server SDK, webhooks verified with PayPal's signature API, refunds and reversals booked against the pool.
+- **APIMatic Context Plugin:** gave Claude Code the PayPal Server SDK's endpoints and models while we built the Orders integration (create, capture, payer-action link, request ids).
+- **AI:** Claude Opus 5.5 is the agent (strict tool schemas, read-only tools, one repair turn); Claude Haiku 5.5 is the sentinel. Built with Claude Code.
+- **Stack:** Next.js and TypeScript, SQLite, AG Grid, Leaflet, hosted on Render. A pure firewall (no I/O, no clock, no LLM), tested by import-graph checks.
+- **Replay mode** serves the recorded Claude run, so anyone can try the whole flow, with real sandbox payouts, without API keys.
 
 ### Challenges we ran into
-- Designing for a *compromised* agent rather than a well-behaved one, so the test harness uses an agent stub that obeys every injected instruction.
-- PayPal batch webhooks don't carry item detail, so status has to be reconciled by following the links back to the batch.
-- Making a live demo deterministic: recorded LLM fixtures, real USGS data, real sandbox payouts.
+- Designing for a *compromised* agent, not a well-behaved one: the test harness swaps in a script that obeys every injected instruction, and a reviewer who approves everything.
+- Our own review found that capping what the agent can pay isn't enough: a hijacked agent could still quietly pay people less, leave them out, or phish them through the payout note. We added a floor rule and fixed notes, and we list what remains.
+- PayPal batch webhooks don't carry item detail, so status is reconciled by fetching the batch; a failed webhook is processed on PayPal's retry instead of being dropped as a duplicate.
 
 ### Accomplishments we're proud of
-- A red-team suite of 27 attack payloads. Result: every payload was flagged by at least one sentinel layer (pattern checks 21/27, Claude Haiku 25/27), and **27/27 attacks moved $0 to an unauthorised payee**, even with the agent fully compromised and a careless reviewer approving everything. (Measured with `npm run redteam -- --llm replay`.)
-- Table-driven firewall tests for every rule boundary, plus a property test over 3,000 generated compromised-agent plans (`npm test`).
-- Real sandbox payouts: about 30 seconds from sending the batch to $680 landing in seven recipients' sandbox accounts.
-- We judged it ourselves with seven reviewer personas, then fixed what they found: a firewall floor (R12) so a hijacked agent can't quietly underpay or leave people out, fixed payout notes so it can't message recipients, and an honest residual-risk table that includes the attack we don't stop.
+- **$0 to anyone not owed in 27 of 27 attacks**, judged against a hand-written table of what each household is owed. Every attack is also held by a firewall rule other than the $300 approval limit, and agent-written text reached PayPal in none. (`npm run redteam -- --llm replay`; the sentinel flagged 22/27 by patterns, 25/27 by Claude Haiku, 27/27 either way.)
+- Real sandbox payouts: about 30 seconds from sending the batch to $680 landing in seven households' sandbox accounts.
+- An honest residual-risk table: paying less or leaving people out goes to a person; an insider swapping a payee address is not stopped, and we say so on the page.
+- Table-driven tests for every firewall rule boundary, a property test over 3,000 generated compromised-agent plans, and end-to-end tests of what PayPal was actually asked to pay (`npm test`).
 
 ### What we learned
 For AI agents that move money, "make the model safer" is the wrong place to put the guarantee. The model should propose; deterministic code should dispose. Limiting what the agent can *express* does more than trying to detect what it was told.
 
 ### What's next
+- A pilot design with a cash-programme partner in Central America: transfer values set from the local minimum expenditure basket and household size, and delivery through whatever rail households have (PayPal, Venmo, or a licensed partner's cash-out).
+- Data minimisation: the agent only needs to know a household qualifies for an uplift, not which condition it has.
 - More hazards (floods, cyclones, heat) through adapters that feed the same firewall.
 - Real intensity data (USGS ShakeMap) for finer eligibility zones.
 - Packaging the firewall as an MCP server so any agent can route PayPal payments through it.
@@ -73,9 +78,7 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 
 ## 5. Built with (tags)
 
-`typescript` `nextjs` `react` `nodejs` `sqlite` `tailwindcss` `paypal` `paypal-payouts-api` `paypal-orders-api` `paypal-webhooks` `claude` `anthropic-api` `claude-code` `model-context-protocol` `ag-grid` `apimatic` `leaflet` `usgs-earthquake-api` `render` `zod` `vitest`
-
-`emsc`
+`paypal` `paypal-payouts-api` `paypal-orders-api` `paypal-webhooks` `paypal-server-sdk` `claude` `anthropic-api` `claude-code` `model-context-protocol` `apimatic` `ag-grid` `render` `typescript` `nextjs` `react` `nodejs` `sqlite` `tailwindcss` `leaflet` `usgs-earthquake-api` `emsc` `zod` `vitest`
 
 ## 6. Tools used and how (the form asks for this)
 
@@ -99,21 +102,15 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 
 Rules: public on YouTube, under 3 minutes, shows the project running, **no music, no copyrighted material**. Voiceover only (record audio separately, clean it, add captions). Screen-record at 1080p. Warm the Render instance first so there's no cold start in the footage. Avoid showing logos other than the PayPal sandbox screens you need.
 
-| Time | On screen | Voiceover |
-|---|---|---|
-| 0:00–0:12 | Title card, then the How it works enrolment section | "This is household 04 in Chitré, Panama. A field partner enrolled them in August: home, language, and that someone there has limited mobility. On 9 October a magnitude 7.7 earthquake hit. They didn't apply for anything." |
-| 0:12–0:35 | Mission control → **Run assessment**. The event card shows M7.7, PAGER orange, EMSC agrees. The money's-path board lights up | "Firstlight sees two seismic agencies agree. A Claude agent reads their reports and drafts who should get what: seven households, tier by distance, one tier up for household 04." |
-| 0:35–1:00 | Open household 04's row: every rule green, the amount the firewall computed, the fixed Spanish note PayPal will deliver | "The agent can't set an amount or name a payee; there's no field for either. The firewall recomputes every amount, checks nobody eligible was left out, and shows its working. Even the message is a fixed note, so a hijacked agent can't phish anyone." |
-| 1:00–1:30 | Approve ($680 is over the $300 limit) → Send payouts → Payouts: statuses flip to SUCCESS. **Split-screen:** a recipient's PayPal sandbox account with the payment and the Spanish note | "Six hundred and eighty dollars needs a person, so we approve. About thirty seconds later PayPal Payouts has delivered it, and here it is in a sandbox account, with the note in Spanish." |
-| 1:30–2:00 | Red team → **Compromised agent** ("$0.00 reached anyone not entitled to it"), then the residual-risks table, then Audit → **Verify chain** | "Now we hijack the agent and make it obey every injected instruction. Zero dollars reach anyone not owed, across twenty-seven attacks. We also show what it can still try, like paying people less, which goes to a person, and the one thing we don't stop: an insider changing a payee address." |
-| 2:00–2:20 | Agents page: a person sets a $5 allowance; the scripted donor agent donates over MCP; the PayPal approval page; the receipt verified against the audit log | "Other AI agents can fund the pool, but only within an allowance a person set, and a person still approves each payment on PayPal. The receipt ties back to the audit log." |
-| 2:20–2:35 | Closing card: tagline, live demo URL, repo | "Firstlight. The model proposes; the code disposes. Built with Claude and PayPal." |
+The full production plan is in [docs/VIDEO_PLAN.md](docs/VIDEO_PLAN.md) (shot list, capture commands, edit, upload) and the script to read is in [docs/VOICEOVER.md](docs/VOICEOVER.md). In short, about 2:35, one story:
 
-Recording tips:
-- Do one dry run per scene; cut dead time (loading spinners, typing).
-- Keep the cursor slow and deliberate; zoom into the rule drawer and the split-screen.
-- If a payout is slow in the sandbox, pre-trigger it and cut.
-- Upload as **Public** (not Unlisted/Private), add captions, paste the link in the Devpost form.
+1. **0:00** Household 04 in Chitré was enrolled in August; a M7.7 quake hits.
+2. **0:12** Two agencies agree; the Claude agent drafts seven households' payouts.
+3. **0:35** The firewall's working for household 04, and the fixed Spanish note the agent can't change.
+4. **1:00** A person approves $680; PayPal Payouts lands it in about 30 s, shown in a sandbox account.
+5. **1:30** The hijacked-agent attack: $0.00 to anyone not owed. What it can still try, and the one thing we don't stop.
+6. **2:00** An AI agent donates within a person's allowance; a person approves on PayPal; the receipt verifies.
+7. **2:22** "The model proposes; the code disposes."
 
 ---
 
