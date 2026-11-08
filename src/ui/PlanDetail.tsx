@@ -92,23 +92,21 @@ function DecisionBar({ plan }: { plan: PlanView }) {
     return () => io.disconnect();
   }, [text]);
   if (!text) return null;
+  // No spacer needed: the decision panel sits near the end of the page, and the
+  // bar steps aside whenever the panel is on screen.
   return (
-    <>
-      {/* Room under the page's last content so the bar never covers it. */}
-      <div className="h-16 md:hidden" aria-hidden />
-      <div
-        className={`fixed inset-x-0 bottom-0 z-[900] border-t-2 border-black bg-hold-fill px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 text-black md:hidden ${panelVisible ? 'hidden' : ''}`}
-        role="region"
-        aria-label="Decision waiting"
-      >
-        <div className="flex items-center gap-3">
-          <p className="num min-w-0 flex-1 text-[0.95rem] font-bold leading-snug">{text}</p>
-          <button type="button" className="btn h-10 shrink-0 border-black px-4 font-bold" onClick={() => goToDecision()}>
-            Review
-          </button>
-        </div>
+    <div
+      className={`fixed inset-x-0 bottom-0 z-[900] border-t-2 border-black bg-hold-fill px-4 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 text-black md:hidden ${panelVisible ? 'hidden' : ''}`}
+      role="region"
+      aria-label="Decision waiting"
+    >
+      <div className="flex items-center gap-3">
+        <p className="num min-w-0 flex-1 text-[0.95rem] font-bold leading-snug">{text}</p>
+        <button type="button" className="btn h-10 shrink-0 border-black px-4 font-bold" onClick={() => goToDecision()}>
+          Review
+        </button>
       </div>
-    </>
+    </div>
   );
 }
 

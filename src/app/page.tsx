@@ -20,7 +20,7 @@ const OUTER_BAND_KM = defaultFirewallConfig().tierMaxDistanceKm.C;
 
 const QuakeMap = dynamic(() => import('@/ui/QuakeMap'), {
   ssr: false,
-  loading: () => <div className="h-full min-h-[360px] bg-raised" />,
+  loading: () => <div className="h-full min-h-[360px] flex-1 bg-raised" />,
 });
 
 const prefersReducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -191,8 +191,11 @@ export default function MissionControl() {
           )}
         </div>
         {/* isolate: Leaflet's controls use z-index 1000, the same as the sticky header; keep them inside the map's own stacking context. */}
-        <div className="panel relative isolate z-0 overflow-hidden lg:col-span-7">
-          {event && state ? <QuakeMap event={event} plan={plan} recipients={plan?.recipients ?? event.recipients} onSelect={openRecipient} /> : null}
+        <div className="panel relative isolate z-0 flex flex-col overflow-hidden lg:col-span-7">
+          {/* The map fills the row's height above the legend, so the legend is never pushed out of the panel. */}
+          <div className="flex min-h-[360px] flex-1 flex-col">
+            {event && state ? <QuakeMap event={event} plan={plan} recipients={plan?.recipients ?? event.recipients} onSelect={openRecipient} /> : null}
+          </div>
           <MapLegend />
         </div>
       </div>
