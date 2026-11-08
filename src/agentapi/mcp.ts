@@ -3,12 +3,16 @@ import { z } from 'zod';
 import type { Db } from '../ledger/db';
 import { ALLOWANCE_TOKEN_PATTERN } from '../donations/allowance';
 import { DonationError, type DonationService } from '../donations/service';
+import { PipelineError, type Pipeline } from '../pipeline/pipeline';
 import { activeEvents, DONATION_LIMITS, poolStatusView, RECEIPT_STATUSES } from './catalog';
+import { dryRunLimit as sharedDryRunLimit, dryRunSummary, type RollingLimit } from './dry-run';
 
 /**
- * Firstlight's MCP server for donor agents (SPEC §5.6b): five tools, all
- * read-only except create_donation, which only creates a PayPal order that a
- * person must approve, and only under an allowance a person created.
+ * Firstlight's MCP server for agents (SPEC §5.6b): six tools, all read-only
+ * except create_donation, which only creates a PayPal order that a person
+ * must approve, and only under an allowance a person created.
+ * check_payout_plan runs the payout firewall itself on a plan the caller
+ * sends, as a dry run: nothing is stored or paid.
  * Every agent-supplied string is untrusted data.
  *
  * Input schemas advertise the same limits the server enforces; every tool
@@ -35,6 +39,25 @@ const createDonationInput = z.strictObject({
     .regex(/^[A-Za-z0-9_-]{8,64}$/)
     .optional()
     .describe('Optional, 8 to 64 of A-Z a-z 0-9 _ -. Repeating it under the same allowance returns the same receipt and creates no new order.'),
+});
+
+// Same shape and limits as the plan the internal payout agent submits (src/firewall/plan.ts).
+// Loose objects: unknown fields reach the firewall, which flags them (R9), as it would for the internal agent.
+const checkPlanInput = z.looseObject({
+  eventId: z.string().min(1).max(128).describe('The earthquake, as list_active_events names it (eventId).'),
+  decision: z.enum(['trigger', 'hold', 'escalate']).describe('trigger: pay; hold: pay nobody yet; escalate: pay, but ask a person first.'),
+  rationale: z.string().max(10_000).describe('Why. Treated as untrusted text and scanned for injected instructions.'),
+  items: z
+    .array(
+      z.looseObject({
+        recipientId: z.string().min(1).max(128).describe('An enrolled household id, e.g. rcp_01.'),
+        tier: z.enum(['A', 'B', 'C']).describe('Requested tier. The firewall sets the amount from the tier table and the distance band; plans carry no amounts.'),
+        note: z.string().max(5000).describe('Draft note. Never sent: recipients get fixed, signed-off text.'),
+        why: z.string().max(2000),
+      }),
+    )
+    .max(500),
+  exceptionRequests: z.array(z.looseObject({ recipientId: z.string().min(1).max(128), reason: z.string().max(2000) })).max(100).describe('Send [] if none. Any request forces human approval.'),
 });
 
 // ── output schemas ─────────────────────────────────────────────────────────
@@ -82,6 +105,41 @@ const allowanceOutput = z.object({
     heldForOtherAccount: z.number().int().describe('Donations approved by a different PayPal account: held, never credited.'),
     note: z.string(),
   }),
+});
+
+const verdictKind = z.enum(['ALLOW', 'REQUIRE_APPROVAL', 'BLOCK']);
+const checkPlanOutput = z.object({
+  dryRun: z.literal(true),
+  eventId: z.string(),
+  overall: verdictKind,
+  meaning: z.string(),
+  decision: z.enum(['trigger', 'hold', 'escalate']).nullable(),
+  totalUsd: usd.describe('What the firewall would let be sent, from its own tier table.'),
+  items: z.array(
+    z.object({
+      index: z.number().int(),
+      recipientId: z.string(),
+      requestedTier: z.string(),
+      allowedTier: z.enum(['A', 'B', 'C']).nullable(),
+      verdict: verdictKind,
+      amountUsd: usd,
+      reasons: z.array(z.string()),
+    }),
+  ),
+  findings: z.array(z.object({ rule: z.string(), status: z.enum(['pass', 'warn', 'block']), code: z.string(), plain: z.string() })).describe('Plan-wide rule results in plain words.'),
+  coverage: z
+    .object({
+      checked: z.boolean(),
+      why: z.string().optional(),
+      eligibleHouseholds: z.number().int().optional(),
+      owedUsd: usd.optional(),
+      plannedUsd: usd.optional(),
+      shortfallUsd: usd.optional().describe('R12: how much less the households owed would get under this plan than at their full band.'),
+      householdsShort: z.array(z.object({ recipientId: z.string(), bandAllows: z.enum(['A', 'B', 'C']), owedUsd: usd, plannedUsd: usd })).optional(),
+    })
+    .describe('R12 coverage floor: who the firewall itself considers owed, and what this plan would leave them short.'),
+  basis: z.object({ registryHouseholds: z.number().int(), poolBalanceUsd: usd, corroboration: z.string(), checkedAt: z.string() }),
+  note: z.string(),
 });
 
 const createOutput = z.object({
@@ -139,12 +197,13 @@ const receiptOutput = z.object({
   paypalConfirmedReason: z.string().optional(),
 });
 
-export function buildMcpServer(deps: { db: Db; donations: DonationService }): McpServer {
+export function buildMcpServer(deps: { db: Db; donations: DonationService; pipeline: Pick<Pipeline, 'dryRun'>; dryRunLimit?: RollingLimit }): McpServer {
+  const dryRunLimit = deps.dryRunLimit ?? sharedDryRunLimit;
   const server = new McpServer(
     { name: 'firstlight', version: '1.2.0' },
     {
       instructions:
-        'Firstlight is a disaster-relief pool running in the PayPal SANDBOX (no real money). You can check the pool and active relief events without credentials. To donate you need an allowance_token that a person created for you at /agents: it sets who you are (its label becomes your donor name), a cap and an expiry, and the server enforces them. create_donation returns a PayPal approval URL: a person must open it and approve before anything is charged. The first approval ties the allowance to that PayPal account; a donation approved by any other account is held and never credited. get_receipt shows what PayPal itself reports for the order.',
+        'Firstlight is a disaster-relief pool running in the PayPal SANDBOX (no real money). You can check the pool and active relief events without credentials, and dry-run any payout plan against the payout firewall with check_payout_plan before anything is sent to PayPal. To donate you need an allowance_token that a person created for you at /agents: it sets who you are (its label becomes your donor name), a cap and an expiry, and the server enforces them. You cannot create or revoke an allowance yourself. create_donation returns a PayPal approval URL: a person must open it and approve before anything is charged. The first approval ties the allowance to that PayPal account; a donation approved by any other account is held and never credited. get_receipt shows what PayPal itself reports for the order.',
     },
   );
   const ok = <T extends Record<string, unknown>>(v: T) => ({ content: [{ type: 'text' as const, text: JSON.stringify(v, null, 2) }], structuredContent: v });
@@ -181,7 +240,7 @@ export function buildMcpServer(deps: { db: Db; donations: DonationService }): Mc
     {
       title: 'Check your allowance',
       description:
-        'What your allowance lets you do: label (your donor name), cap, how much is committed and left, expiry, whether it is active, and whether it is tied to one PayPal account (the first approval ties it; approvals by any other account are held, not credited). Read-only. Only the person who created the allowance can revoke it, at /agents.',
+        'What your allowance lets you do: label (your donor name), cap, how much is committed and left, expiry, whether it is active, and whether it is tied to one PayPal account (the first approval ties it; approvals by any other account are held, not credited). Read-only. Revoking needs the manage key the person got when they created the allowance at /agents; your allowance_token cannot revoke it.',
       inputSchema: z.strictObject({ allowance_token: allowanceToken }),
       outputSchema: allowanceOutput,
       annotations: { readOnlyHint: true, openWorldHint: false },
@@ -241,6 +300,30 @@ export function buildMcpServer(deps: { db: Db; donations: DonationService }): Mc
       if (!id) return fail('INVALID_REQUEST', 'Pass receipt_id (the receiptId returned by create_donation).');
       const r = await deps.donations.receiptWithPayPal(id);
       return r ? ok(r) : fail('NOT_FOUND', 'No donation with that receipt.');
+    },
+  );
+
+  server.registerTool(
+    'check_payout_plan',
+    {
+      title: 'Check a payout plan against the firewall',
+      description:
+        'Dry-run any payout plan against the firewall before sending anything to PayPal. Send a plan in the same shape the internal payout agent submits (eventId, decision, rationale, items [{recipientId, tier, note, why}], exceptionRequests). Returns the verdict (ALLOW, REQUIRE_APPROVAL or BLOCK), the amount the firewall itself computes for each household, every rule finding in plain words, and the R12 coverage shortfall, checked against the live registry, the pool ledger as it is now and the stored earthquake. Read-only: no money moves and nothing is stored. A real payout is checked again when it is sent, and a person approves any plan the firewall holds. Rate-limited across all callers.',
+      inputSchema: checkPlanInput,
+      outputSchema: checkPlanOutput,
+      annotations: { readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    },
+    async (plan) => {
+      if (!dryRunLimit.take()) return fail('RATE_LIMITED', 'Too many plan checks in the last minute across all callers. Try again shortly.');
+      try {
+        const { verdict, ctx, basis } = await deps.pipeline.dryRun(plan);
+        return ok(dryRunSummary(verdict, ctx, basis));
+      } catch (e) {
+        if (e instanceof PipelineError && e.code === 'NO_EVENT') {
+          return fail('NO_EVENT', 'That earthquake has not been assessed on this server, so there is no stored event to check against. Use an eventId from list_active_events whose status is not awaiting_assessment.');
+        }
+        return fail('INTERNAL', 'Could not check the plan. Try again later.');
+      }
     },
   );
 

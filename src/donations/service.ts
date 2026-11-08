@@ -7,6 +7,8 @@ import type { DonationOrders, OrderConfirmation } from '../paypal/orders';
 import {
   ALLOWANCE_ID_RE,
   ALLOWANCE_TOKEN_RE,
+  MANAGE_KEY_RE,
+  MAX_MANAGE_KEYS,
   allowanceHandle,
   allowanceStatus,
   payerCheck,
@@ -16,6 +18,7 @@ import {
   parseAgentDonation,
   type AllowanceState,
 } from './allowance';
+import { HumanGate } from './human-gate';
 import { evaluateDonation, type DonationPolicyConfig, type RecentDonation } from './policy';
 
 /**
@@ -59,6 +62,8 @@ export type AllowanceRow = {
   revoked_ms: number | null;
   /** sha256 of the PayPal payer id this allowance is tied to (set by the first approval). */
   payer_hash: string | null;
+  /** sha256 of the person's manage key (alm_…), which lists and revokes the allowance. */
+  manage_hash: string | null;
 };
 
 /** What PayPal told us about a capture (from a verified webhook). */
@@ -89,6 +94,10 @@ const ALLOWANCE_HTTP: Record<string, number> = {
 const HELD = 'PAYER_MISMATCH';
 
 export const hashAllowanceToken = (token: string) => sha256Hex(token);
+export const hashManageKey = (key: string) => sha256Hex(`manage:${key}`);
+
+/** Ledger ref of a refund debit held while PayPal is asked (see refund()). */
+const reserveRef = (ref: string) => `reserve:${ref}`;
 
 /** What a receipt does and does not show (also in the manifest). */
 export const RECEIPT_PROVES =
@@ -177,6 +186,8 @@ export class DonationService {
   private readonly confirmations = new Map<string, { at: number; value: PayPalConfirmed | null; reason?: string }>();
   private confirmCalls: number[] = [];
   private readonly refunding = new Set<string>();
+  /** Nonces for the /agents allowance form (per process: a restart voids them). */
+  readonly humanGate = new HumanGate(() => this.now());
 
   private now() {
     return (this.deps.clock ?? Date.now)();
@@ -466,6 +477,8 @@ export class DonationService {
     const ref = `${kind}:${e.refId ?? `event:${e.eventId}`}`;
     const tx = this.deps.db.transaction(() => {
       if (this.deps.db.prepare('SELECT 1 FROM ledger_entries WHERE kind = ? AND ref = ?').get(ledgerKind, ref)) return; // seen this refund before
+      // A staff refund PayPal left PENDING held its debit as a reservation: this booking replaces it.
+      if (kind === 'refund') this.releaseReservation(reserveRef(ref));
       const cur = this.get(d.receipt_id)!;
       const credited = captureId ? this.deps.ledger.donationCreditCents(captureId) : 0;
       const room = Math.max(0, credited - cur.refunded_cents);
@@ -563,6 +576,13 @@ export class DonationService {
    * Refused if it would exceed what was captured and not yet returned, or take
    * the pool below zero. A held donation (PAYER_MISMATCH) that PayPal captured
    * anyway was never credited: it is refunded without touching the pool.
+   *
+   * The pool check and a reservation of the debit commit in one immediate
+   * transaction BEFORE PayPal is asked, so a payout batch reserved while we
+   * wait can't spend the same money. The reservation is a donation_refund
+   * ledger entry with ref "reserve:…". PayPal's answer finalises it
+   * (COMPLETED: swapped for the real refund entry in one transaction), keeps
+   * it (PENDING: the refund webhook swaps it), or releases it (error).
    */
   async refund(receiptId: string, raw: unknown): Promise<DonationRow & { refundId: string; refundStatus: string }> {
     const body = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
@@ -588,34 +608,71 @@ export class DonationService {
     const cents = askedCents ?? room;
     if (cents <= 0) this.refuse('NOTHING_TO_REFUND', 'This donation has already been refunded in full.', 409);
     if (cents > room) this.refuse('REFUND_EXCEEDS_CAPTURE', `At most $${(room / 100).toFixed(2)} of this donation can still be refunded.`, 409);
-    if (!heldCapture && this.deps.ledger.poolBalanceCents() - cents < 0) {
-      this.refuse('POOL_WOULD_GO_NEGATIVE', `The pool has $${(this.deps.ledger.poolBalanceCents() / 100).toFixed(2)}; refunding $${(cents / 100).toFixed(2)} would take it below zero.`, 409);
-    }
     if (this.refunding.has(receiptId)) this.refuse('REFUND_IN_PROGRESS', 'A refund of this donation is already being sent to PayPal.', 409);
+
+    // Same donation, same state, same amount → same PayPal-Request-Id: a retry after a crash can't refund twice.
+    const requestId = sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), receiptId, op: 'refund', refundedBefore: d.refunded_cents, cents }));
+    const held = reserveRef(requestId);
+    // A held capture was never in the pool, so there is nothing to reserve.
+    if (!heldCapture) this.reserveRefund(held, cents);
 
     this.refunding.add(receiptId);
     try {
-      // Same donation, same state, same amount → same PayPal-Request-Id: a retry after a crash can't refund twice.
-      const requestId = sha256Hex(canonicalJson({ instance: instanceId(this.deps.db), receiptId, op: 'refund', refundedBefore: d.refunded_cents, cents }));
       let res;
       try {
         res = await this.deps.orders().refund({ captureId, amountCents: cents, requestId, note: 'Refund of your donation to the Firstlight relief pool (sandbox).' });
       } catch (err) {
+        if (!heldCapture) this.releaseReservation(held);
         this.deps.audit.append('donation.refund_failed', { receiptId, captureId, amountCents: cents, initiatedBy: 'operator', message: (err as Error).message.slice(0, 200) });
         throw new DonationError('PAYPAL', (err as Error).message, 502);
       }
       if (res.status !== 'COMPLETED') {
-        // PENDING (e.g. an eCheck): PayPal hasn't returned the money yet. The refund webhook books it when it completes.
+        // PENDING (e.g. an eCheck): PayPal hasn't returned the money yet. The debit stays reserved under PayPal's
+        // refund id; the refund webhook books it when it completes and drops the reservation in the same transaction.
+        if (!heldCapture) this.keepReservation(held, `refund:${res.refundId}`);
         this.deps.audit.append('donation.refund_pending', { receiptId, captureId, paypalRefId: res.refundId, refundStatus: res.status, amountCents: cents, initiatedBy: 'operator', reason });
         return { ...this.get(receiptId)!, refundId: res.refundId, refundStatus: res.status };
       }
       const refunded = Math.min(res.amountCents ?? cents, cents);
       if (heldCapture) this.refundHeld(receiptId, captureId, res.refundId, refunded, reason);
-      else this.onCaptureReturned('refund', { captureId, orderId: d.order_id, refId: res.refundId, eventId: `operator:${requestId.slice(0, 16)}`, amountCents: refunded, initiatedBy: 'operator', reason });
+      else {
+        // Swap the reservation for the real refund entry in one transaction: the pool never counts it twice or not at all.
+        const book = this.deps.db.transaction(() => {
+          this.releaseReservation(held);
+          this.onCaptureReturned('refund', { captureId, orderId: d.order_id, refId: res.refundId, eventId: `operator:${requestId.slice(0, 16)}`, amountCents: refunded, initiatedBy: 'operator', reason });
+        });
+        book.immediate();
+      }
       return { ...this.get(receiptId)!, refundId: res.refundId, refundStatus: res.status };
     } finally {
       this.refunding.delete(receiptId);
     }
+  }
+
+  /** Check the pool and hold the refund's debit, atomically. A reservation a crash left for this same request is replaced, not counted twice. */
+  private reserveRefund(ref: string, cents: number): void {
+    const tx = this.deps.db.transaction(() => {
+      this.releaseReservation(ref);
+      const balance = this.deps.ledger.poolBalanceCents();
+      if (balance - cents < 0) {
+        this.refuse('POOL_WOULD_GO_NEGATIVE', `The pool has $${(balance / 100).toFixed(2)}; refunding $${(cents / 100).toFixed(2)} would take it below zero.`, 409);
+      }
+      this.deps.db.prepare("INSERT INTO ledger_entries (kind, amount_cents, ref, created_ms) VALUES ('donation_refund', ?, ?, ?)").run(-cents, ref, this.now());
+    });
+    tx.immediate();
+  }
+
+  private releaseReservation(ref: string): void {
+    this.deps.db.prepare("DELETE FROM ledger_entries WHERE kind = 'donation_refund' AND ref = ?").run(ref);
+  }
+
+  /** PayPal left the refund PENDING: keep the debit held under PayPal's refund id, unless its webhook already booked it. */
+  private keepReservation(ref: string, bookedRef: string): void {
+    const tx = this.deps.db.transaction(() => {
+      if (this.deps.db.prepare("SELECT 1 FROM ledger_entries WHERE kind = 'donation_refund' AND ref = ?").get(bookedRef)) this.releaseReservation(ref);
+      else this.deps.db.prepare("UPDATE ledger_entries SET ref = ? WHERE kind = 'donation_refund' AND ref = ?").run(reserveRef(bookedRef), ref);
+    });
+    tx.immediate();
   }
 
   /** A held capture was never in the pool: record the refund, debit nothing. */
@@ -694,21 +751,47 @@ export class DonationService {
     };
   }
 
-  /** A person lets one agent donate up to a cap until an expiry. The token is returned once; only its sha256 is stored. */
-  createAllowance(raw: unknown): AllowanceView & { allowanceToken: string } {
+  /**
+   * A person lets one agent donate up to a cap until an expiry. Two secrets are
+   * returned once, and only their hashes are stored: the agent's token (alw_…,
+   * donates) and the person's manage key (alm_…, lists and revokes). The HTTP
+   * route only lets a same-origin browser request with a fresh nonce get here.
+   */
+  createAllowance(raw: unknown): AllowanceView & { allowanceToken: string; manageKey: string } {
     const now = this.now();
     const recent = (this.deps.db.prepare('SELECT COUNT(*) AS n FROM allowances WHERE created_ms > ?').get(now - 10 * 60_000) as { n: number }).n;
     const activeLabels = (this.deps.db.prepare('SELECT label FROM allowances WHERE revoked_ms IS NULL AND expires_ms > ?').all(now) as { label: string }[]).map((r) => r.label);
     const dec = evaluateAllowanceRequest(raw, { now, createdLast10Min: recent, activeLabels });
     if (!dec.ok) this.refuse(dec.code, dec.message, dec.code === 'GLOBAL_RATE_LIMIT' ? 429 : dec.code === 'LABEL_TAKEN' ? 409 : 400);
     const token = `alw_${randomBytes(24).toString('base64url')}`;
+    const manageKey = `alm_${randomBytes(24).toString('base64url')}`;
     const id = `alid_${randomBytes(8).toString('hex')}`;
     this.deps.db
-      .prepare('INSERT INTO allowances (id, token_hash, label, cap_cents, created_ms, expires_ms) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, hashAllowanceToken(token), dec.label, dec.capCents, now, dec.expiresMs);
-    // Never the token (nor its hash) in the audit log: the log is public.
+      .prepare('INSERT INTO allowances (id, token_hash, label, cap_cents, created_ms, expires_ms, manage_hash) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run(id, hashAllowanceToken(token), dec.label, dec.capCents, now, dec.expiresMs, hashManageKey(manageKey));
+    // Never a token or key (nor their hashes) in the audit log: the log is public.
     this.deps.audit.append('allowance.created', { allowanceId: id, label: dec.label, capCents: dec.capCents, expiresMs: dec.expiresMs });
-    return { ...this.allowanceView(this.allowanceRow(id)!), allowanceToken: token };
+    return { ...this.allowanceView(this.allowanceRow(id)!), allowanceToken: token, manageKey };
+  }
+
+  private allowanceByManageKey(key: string): AllowanceRow | undefined {
+    if (!MANAGE_KEY_RE.test(key)) return undefined;
+    return this.deps.db.prepare('SELECT * FROM allowances WHERE manage_hash = ?').get(hashManageKey(key)) as AllowanceRow | undefined;
+  }
+
+  /**
+   * "Your allowances" on /agents: the browser sends the manage keys it kept.
+   * One entry per key, in order; null for a key that matches nothing (e.g.
+   * after a demo reset), so the page can forget it.
+   */
+  allowancesForManageKeys(keys: unknown): (AllowanceView | null)[] {
+    if (!Array.isArray(keys) || keys.length > MAX_MANAGE_KEYS || keys.some((k) => typeof k !== 'string')) {
+      this.refuse('INVALID_REQUEST', `manage_keys must be a list of up to ${MAX_MANAGE_KEYS} alm_… keys.`, 400);
+    }
+    return (keys as string[]).map((k) => {
+      const a = this.allowanceByManageKey(k);
+      return a ? this.allowanceView(a) : null;
+    });
   }
 
   /** The allowance a token belongs to, or null. */
@@ -718,19 +801,24 @@ export class DonationService {
   }
 
   /**
-   * Revoke an allowance. Needs its id AND its token: the id is public (audit
-   * log), the token only the person and their agent have. Donations still
-   * waiting for approval under it are cancelled, so they can't be captured.
+   * Revoke an allowance. Needs its id AND the person's manage key: the id is
+   * public (audit log), the manage key only the person has. The agent's token
+   * can't revoke, so an agent can't cancel what its person set up. Donations
+   * still waiting for approval under it are cancelled, so they can't be captured.
    */
-  revokeAllowance(id: string, token: unknown): AllowanceView {
+  revokeAllowance(id: string, manageKey: unknown): AllowanceView {
+    if (typeof manageKey === 'string' && ALLOWANCE_TOKEN_RE.test(manageKey)) {
+      this.refuse('MANAGE_KEY_REQUIRED', "Revoking needs the manage key (alm_…) the person got when they created the allowance. The agent's alw_… token can't revoke it.", 403);
+    }
     const a = ALLOWANCE_ID_RE.test(id) ? this.allowanceRow(id) : undefined;
     const ok =
       a !== undefined &&
-      typeof token === 'string' &&
-      ALLOWANCE_TOKEN_RE.test(token) &&
-      timingSafeEqual(Buffer.from(hashAllowanceToken(token), 'hex'), Buffer.from(a.token_hash, 'hex'));
-    // One answer for "no such id" and "wrong token", so the endpoint is no oracle.
-    if (!ok || !a) this.refuse('ALLOWANCE_NOT_FOUND', 'No allowance with that id and token.', 404);
+      a.manage_hash !== null &&
+      typeof manageKey === 'string' &&
+      MANAGE_KEY_RE.test(manageKey) &&
+      timingSafeEqual(Buffer.from(hashManageKey(manageKey), 'hex'), Buffer.from(a.manage_hash, 'hex'));
+    // One answer for "no such id" and "wrong key", so the endpoint is no oracle.
+    if (!ok || !a) this.refuse('ALLOWANCE_NOT_FOUND', 'No allowance with that id and manage key.', 404);
     if (a.revoked_ms !== null) return this.allowanceView(a);
     const tx = this.deps.db.transaction(() => {
       this.deps.db.prepare('UPDATE allowances SET revoked_ms = ? WHERE id = ? AND revoked_ms IS NULL').run(this.now(), id);

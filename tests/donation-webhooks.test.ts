@@ -213,7 +213,7 @@ describe('CHECKOUT.ORDER.APPROVED', () => {
     const ctx = donationSetup();
     const a = ctx.allowance('revoked-agent', 20);
     const d = await ctx.svc.create({ amount_usd: 5, allowance_token: a.allowanceToken }, 'agent');
-    ctx.svc.revokeAllowance(a.allowanceId, a.allowanceToken);
+    ctx.svc.revokeAllowance(a.allowanceId, a.manageKey);
     const out = await deliver(ctx, { id: 'WH-A3', event_type: 'CHECKOUT.ORDER.APPROVED', resource: { id: d.orderId, status: 'APPROVED' } });
     expect(out.status).toBe(200);
     expect(ctx.fake.calls.capture).toHaveLength(0);
