@@ -117,7 +117,7 @@ export function manifest(baseUrl: string) {
     },
     mcpTools: ['get_pool_status', 'list_active_events', 'get_allowance', 'create_donation', 'get_receipt', 'check_payout_plan'],
     payoutFirewall: {
-      what: 'Dry-run any payout plan against the firewall before sending anything to PayPal.',
+      what: "Dry-run a payout plan for this programme's enrolled households against the firewall before sending anything to PayPal.",
       tool: 'check_payout_plan',
       input:
         '{eventId, decision: trigger | hold | escalate, rationale, items: [{recipientId, tier: A | B | C, note, why}], exceptionRequests: [{recipientId, reason}]}: the same shape the internal payout agent submits. Plans carry tiers, never amounts or payee addresses.',
@@ -161,7 +161,7 @@ Donor agents can fund the relief pool, but only under an allowance a person gave
 - Manifest: ${b}/.well-known/firstlight.json
 - MCP (Streamable HTTP): ${b}/mcp. Tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt, check_payout_plan
 - Allowance: a person creates one for you at ${b}/agents (label, cap $1 to $100, expiry 1 hour to 7 days) and gives you its alw_… token. You can't create or revoke one yourself; the person keeps a separate manage key for that
-- Payout firewall: MCP check_payout_plan. Dry-run any payout plan against the firewall before sending anything to PayPal. Same plan shape as the internal agent (eventId, decision, rationale, items [{recipientId, tier, note, why}], exceptionRequests); returns the verdict, the amounts the firewall computes, findings in plain words and the coverage shortfall. Nothing moves and nothing is stored
+- Payout firewall: MCP check_payout_plan. Dry-run a payout plan for this programme's enrolled households against the firewall before sending anything to PayPal. Same plan shape as the internal agent (eventId, decision, rationale, items [{recipientId, tier, note, why}], exceptionRequests); returns the verdict, the amounts the firewall computes, findings in plain words and the coverage shortfall. Nothing moves and nothing is stored
 - Pool status: GET ${b}/api/pool
 - Active relief events: GET ${b}/api/events/active
 - Check your allowance: POST ${b}/api/agent/allowance {"allowance_token": "alw_…"}

@@ -255,13 +255,16 @@ describe('MCP check_payout_plan', () => {
   });
 
   it('is described in the manifest and llms.txt as a dry run before PayPal', async () => {
-    const phrase = 'dry-run any payout plan against the firewall before sending anything to paypal';
+    const phrase = "dry-run a payout plan for this programme's enrolled households against the firewall before sending anything to paypal";
     expect(manifest('https://firstlight.test').payoutFirewall.what.toLowerCase()).toContain(phrase);
     expect(llmsTxt('https://firstlight.test').toLowerCase()).toContain(phrase);
     const { client } = await dryRunSetup();
     const tool = (await client.listTools()).tools.find((t) => t.name === 'check_payout_plan')!;
     expect(tool.description!.toLowerCase()).toContain(phrase);
     expect(tool.annotations).toMatchObject({ readOnlyHint: true });
+    // Scoped to this programme's households everywhere, never "any payout plan".
+    const everywhere = [JSON.stringify(manifest('https://firstlight.test')), llmsTxt('https://firstlight.test'), tool.description!, client.getInstructions() ?? ''].join('\n');
+    expect(everywhere).not.toMatch(/any payout plan/i);
   });
 });
 

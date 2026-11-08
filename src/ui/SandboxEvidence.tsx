@@ -18,6 +18,13 @@ type Run = {
   id: string;
   idLabel: string;
   result: string;
+  /**
+   * Payout batches: our own clock, from PayPal accepting the batch to our
+   * polling seeing the items final, as recorded in docs/decisions.md. Shown
+   * next to PayPal's clock (time_created to time_completed), read back live.
+   * The two measure different things, so both are labelled.
+   */
+  ourClock?: string;
   /** What we recorded about the run, shown when the row is opened. */
   facts: { label: string; value: string }[];
 };
@@ -28,11 +35,11 @@ const RUNS: Run[] = [
     what: 'Hosted demo: $680 to 7 households',
     id: '9GE626X9SA3NE',
     idLabel: 'Payout batch',
-    result: 'SUCCESS in about 25 s; 7 PAYMENT.PAYOUTS-ITEM.SUCCEEDED webhooks, each signature-verified',
+    result: '7 PAYMENT.PAYOUTS-ITEM.SUCCEEDED webhooks, each signature-verified',
+    ourClock: 'All 7 items SUCCESS about 25 s after sending (our polling)',
     facts: [
       { label: 'Where', value: 'firstlight.onrender.com, replayed assessment, approved in the console' },
       { label: 'Items', value: '7 of 7 SUCCESS, $680.00 in total' },
-      { label: 'Timing', value: 'Batch SUCCESS at about 25 s, seen by polling' },
       { label: 'Webhooks', value: '7 PAYMENT.PAYOUTS-ITEM.SUCCEEDED deliveries, each checked with verify-webhook-signature before use' },
       { label: 'Also', value: 'An unsigned probe delivery was refused and audited; audit chain intact (20 entries)' },
     ],
@@ -42,11 +49,11 @@ const RUNS: Run[] = [
     what: 'Dashboard run: $680 to 7 households',
     id: 'DZCFDP9FFEUV8',
     idLabel: 'Payout batch',
-    result: 'All 7 items SUCCESS, shown live without a reload',
+    result: 'Statuses arrived live on the page without a reload',
+    ourClock: 'All 7 items SUCCESS, seconds not recorded (our polling)',
     facts: [
       { label: 'Where', value: 'The dashboard after a demo reset: replayed AI agent assessment, approved in the UI' },
       { label: 'Items', value: '7 of 7 SUCCESS, $680.00 in total' },
-      { label: 'Timing', value: 'Statuses arrived live on the page without a reload (no seconds recorded)' },
       { label: 'Audit', value: 'Chain verified, 15 entries' },
     ],
   },
@@ -55,11 +62,11 @@ const RUNS: Run[] = [
     what: 'First end-to-end payout from the CLI',
     id: '2BQ585TNCTVDA',
     idLabel: 'Payout batch',
-    result: 'Items SUCCESS at about 26 s, batch at about 33 s',
+    result: 'Live AI agent assessment, about 24 s, then approved via the CLI',
+    ourClock: 'All 7 items SUCCESS about 26 s and the batch SUCCESS about 33 s after sending (our polling)',
     facts: [
       { label: 'Where', value: 'The CLI: a live AI agent assessment (2 turns, about 24 s), approved via the CLI' },
       { label: 'Items', value: '7 recipients, $680.00, all SUCCESS; pool $5,000 → $4,320' },
-      { label: 'Timing', value: 'Assessment about 24 s; items SUCCESS at about 26 s and batch SUCCESS at about 33 s after sending' },
       { label: 'Audit', value: 'Chain intact, 12 entries' },
     ],
   },
@@ -80,11 +87,11 @@ const RUNS: Run[] = [
     what: '$1 smoke test',
     id: 'DHSSBZRTMH9DW',
     idLabel: 'Payout batch',
-    result: 'SUCCESS in about 22 s, transaction 7T759407LM597511H',
+    result: 'Transaction 7T759407LM597511H',
+    ourClock: 'The 1 item SUCCESS about 22 s after sending, via PENDING and PROCESSING (our polling)',
     facts: [
       { label: 'Path', value: 'npm run smoke:payout -- --send' },
       { label: 'Items', value: '1 of 1 SUCCESS, $1.00, transaction 7T759407LM597511H' },
-      { label: 'Timing', value: 'PENDING → PROCESSING → SUCCESS in about 22 s' },
     ],
   },
 ];
@@ -141,7 +148,26 @@ function LiveLine({ c, loading }: { c: RecordedCheck | undefined; loading: boole
   );
 }
 
-function LiveFacts({ c }: { c: RecordedCheck | undefined }) {
+/** PayPal's own clock for a batch, from its time_created and time_completed, or null if PayPal didn't give them. */
+export function paypalClock(c: RecordedCheck | undefined): string | null {
+  if (!c || c.state === 'unavailable' || c.createdMs === null) return null;
+  if (c.completedMs === null) return "PayPal has not completed the batch yet (PayPal's record)";
+  return `PayPal completed the batch ${duration(c.completedMs - c.createdMs)} after creating it (PayPal's record)`;
+}
+
+/** Both clocks, each saying whose it is: ours from polling, PayPal's from its batch record. */
+function Clocks({ ours, c, loading }: { ours: string; c: RecordedCheck | undefined; loading: boolean }) {
+  const theirs = paypalClock(c);
+  return (
+    <span className="block space-y-0.5">
+      <span className="block">{ours}</span>
+      {/* When PayPal can't be read, the line under the row already says so. */}
+      {theirs || loading ? <span className="block">{theirs ?? "Reading PayPal's own times now…"}</span> : null}
+    </span>
+  );
+}
+
+function LiveFacts({ c, ours }: { c: RecordedCheck | undefined; ours: string | undefined }) {
   if (!c || c.state === 'unavailable') return null;
   return (
     <>
@@ -154,8 +180,9 @@ function LiveFacts({ c }: { c: RecordedCheck | undefined }) {
         <>
           <dt className="text-ink-dim">PayPal&apos;s clock</dt>
           <dd className="num text-ink-muted">
-            Created {clockTime(c.createdMs)}
-            {c.completedMs !== null ? `, completed ${clockTime(c.completedMs)} (${duration(c.completedMs - c.createdMs)})` : ', not completed yet'}
+            {paypalClock(c)}: created {clockTime(c.createdMs)}
+            {c.completedMs !== null ? `, completed ${clockTime(c.completedMs)}` : ''}.
+            {ours ? " Our clock starts when PayPal accepts the batch and stops when our polling sees the items final; PayPal's runs from time_created to time_completed on the batch, so the two can differ by several seconds." : ''}
           </dd>
         </>
       ) : null}
@@ -188,7 +215,8 @@ export function SandboxEvidence() {
         </h2>
         <p className="max-w-[72ch] text-[0.92rem] text-ink-muted">
           The demo database starts empty after every restart, so here are the real sandbox runs we made while building it. The ids are PayPal&apos;s own. Each payout batch is read
-          back from PayPal now (read-only, at most every 10 minutes) and compared with what we recorded. Open a run to see the details.
+          back from PayPal now (read-only, at most every 10 minutes) and compared with what we recorded. Timings come from two clocks, each labelled: ours, from polling after we sent the batch, and PayPal&apos;s own record of when it created and completed the
+          batch. Open a run to see the details.
         </p>
       </div>
       <ul>
@@ -209,7 +237,9 @@ export function SandboxEvidence() {
                     <span className="block text-[0.82rem] text-ink-dim">{r.idLabel}</span>
                     <span className="num break-all">{r.id}</span>
                   </span>
-                  <span className="pl-[1.125rem] text-ink-muted sm:pl-0">{r.result}</span>
+                  <span className="pl-[1.125rem] text-ink-muted sm:pl-0">
+                    {r.ourClock ? <Clocks ours={r.ourClock} c={live.get(r.id)} loading={loading && !data} /> : r.result}
+                  </span>
                   {isBatch ? (
                     <span className="pl-[1.125rem] text-[0.88rem] sm:col-span-3">
                       <LiveLine c={live.get(r.id)} loading={loading && !data} />
@@ -219,13 +249,21 @@ export function SandboxEvidence() {
                 <dl className="grid gap-x-5 gap-y-1.5 bg-raised px-5 py-3 pl-[2.375rem] text-[0.88rem] sm:grid-cols-[9rem_minmax(0,1fr)]">
                   <dt className="text-ink-dim">{r.idLabel}</dt>
                   <dd className="num break-all">{r.id}</dd>
+                  {r.ourClock ? (
+                    <>
+                      <dt className="text-ink-dim">Result</dt>
+                      <dd className="text-ink-muted">{r.result}</dd>
+                      <dt className="text-ink-dim">Our clock</dt>
+                      <dd className="text-ink-muted">{r.ourClock}</dd>
+                    </>
+                  ) : null}
                   {r.facts.map((f) => (
                     <div key={f.label} className="contents">
-                      <dt className="text-ink-dim">{f.label === 'Timing' ? 'Recorded timing' : f.label}</dt>
+                      <dt className="text-ink-dim">{f.label}</dt>
                       <dd className="text-ink-muted">{f.value}</dd>
                     </div>
                   ))}
-                  {isBatch ? <LiveFacts c={live.get(r.id)} /> : null}
+                  {isBatch ? <LiveFacts c={live.get(r.id)} ours={r.ourClock} /> : null}
                 </dl>
               </details>
             </li>

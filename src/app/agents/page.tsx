@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useId, useState } from 'react';
 import { useBrowserValue } from '@/ui/browser';
+import { recomputeChain, type ChainEntry } from '@/ui/chain';
 import { DonationFeed, refundFromConsole, type FeedItem } from '@/ui/DonationFeed';
 import { Notice } from '@/ui/format';
 import { ApiError, call, useApi } from '@/ui/live';
+import { Mark, type State } from '@/ui/SignMark';
 
 const LIVE_ORIGIN = 'https://firstlight.onrender.com';
 
@@ -60,8 +62,6 @@ async function fetchMine(): Promise<{ ok: true; found: { key: string; a: Allowan
   }
 }
 
-type AuditEntry = { seq: number; tsMs: number; type: string; payload: unknown; prevHash: string; hash: string };
-
 /** The site's own origin once in the browser, so snippets work on a local copy too. */
 function useOrigin(): string {
   return useBrowserValue(() => window.location.origin, LIVE_ORIGIN);
@@ -101,25 +101,6 @@ function Snippet({ code, caption }: { code: string; caption?: string }) {
 
 // ── Audit chain check in the browser (same algorithm as the manifest's receiptFormat.auditChain) ──
 
-function canonical(v: unknown): string {
-  if (v === null) return 'null';
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`;
-  if (typeof v === 'object') {
-    const o = v as Record<string, unknown>;
-    return `{${Object.keys(o)
-      .filter((k) => o[k] !== undefined)
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${canonical(o[k])}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(v);
-}
-
-async function sha256Hex(s: string): Promise<string> {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
-  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 /** Recompute the chain in this browser up to the donation's audit entry; fall back to the server's check if WebCrypto is missing. */
 async function verifyInBrowser(receiptId: string): Promise<string> {
   const r = await call<{ audit: { created: { seq: number; hash: string } | null; captured: { seq: number; hash: string } | null } }>(`/api/receipts/${receiptId}`);
@@ -129,20 +110,74 @@ async function verifyInBrowser(receiptId: string): Promise<string> {
     const check = await call<{ ok: boolean; count: number }>(`/api/audit/verify?upTo=${target.hash}`);
     return check.ok ? `The server says entry ${target.seq} is in an intact chain of ${check.count}.` : 'The audit chain does not verify.';
   }
-  const { entries } = await call<{ entries: AuditEntry[] }>('/api/audit?limit=1000');
-  const sorted = [...entries].sort((a, b) => a.seq - b.seq);
-  const fromStart = sorted[0]?.seq === 1;
-  let prev = fromStart ? '0'.repeat(64) : (sorted[0]?.prevHash ?? '');
-  let checked = 0;
-  for (const e of sorted) {
-    if (e.prevHash !== prev) return `Entry ${e.seq} does not link to the one before it.`;
-    const h = await sha256Hex(prev + canonical({ seq: e.seq, ts: e.tsMs, type: e.type, payload: e.payload }));
-    if (h !== e.hash) return `Entry ${e.seq} does not match its hash.`;
-    checked++;
-    if (e.hash === target.hash) return `Recomputed ${checked} hashes in your browser: entry ${target.seq} is intact${fromStart ? ' back to the first entry' : ''}.`;
-    prev = e.hash;
-  }
-  return 'This donation’s entry was not in the audit page fetched.';
+  const { entries } = await call<{ entries: ChainEntry[] }>('/api/audit?limit=1000');
+  const check = await recomputeChain(entries, target.hash);
+  if (check.ok) return `Recomputed ${check.checked} hashes in your browser: entry ${target.seq} is intact${check.fromGenesis ? ' back to the first entry' : ''}.`;
+  if (check.brokenAtSeq < 0) return 'This donation’s entry was not in the audit page fetched.';
+  if (check.why === 'hash') return `Entry ${check.brokenAtSeq} does not match its hash.`;
+  return `Entry ${check.brokenAtSeq} does not link to the one before it.`;
+}
+
+// ── Consent chain: who agrees to what, in order ─────────────────────────────
+
+const CONSENT: { name: string; who: string; does: string; mark: State }[] = [
+  {
+    name: 'Person sets an allowance',
+    who: 'You, on this page',
+    does: 'Who the agent is, how much it may give in total and until when. Only this form creates one; the agent gets a token, you keep the manage key.',
+    mark: 'done',
+  },
+  {
+    name: 'Agent asks within the cap',
+    who: 'Your AI agent, over MCP',
+    does: 'create_donation is checked on the server against what is left, the expiry and revocation. Anything over is refused with a code and creates nothing.',
+    mark: 'checkpoint',
+  },
+  {
+    name: 'Person approves on PayPal',
+    who: 'You, on PayPal',
+    does: 'Nothing is charged until you open the approval link and approve. The first approval ties the allowance to your PayPal account.',
+    mark: 'wait',
+  },
+  {
+    name: 'Receipt confirmed by PayPal',
+    who: "PayPal's MCP server",
+    does: "get_receipt asks PayPal's own hosted MCP server (get_order) for the order and shows whether PayPal reports the same capture and amount.",
+    mark: 'done',
+  },
+];
+
+function ConsentChain() {
+  return (
+    <figure className="space-y-2">
+      <div className="rounded-[var(--radius-panel)] bg-allow p-[3px] text-white">
+        <ol className="grid rounded-[4px] border-2 border-white/90 py-4 md:grid-cols-4 md:py-0">
+          {CONSENT.map((s, i) => {
+            const last = i === CONSENT.length - 1;
+            return (
+              <li key={s.name} className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3 px-4 md:block md:py-4">
+                {/* Mark and connector: vertical on phones, horizontal from 768 px. */}
+                <div className="flex flex-col items-center md:mb-2.5 md:h-5 md:flex-row" aria-hidden>
+                  <Mark state={s.mark} />
+                  {!last ? <span className="my-1 w-0 flex-1 border-l-[3px] border-white md:mx-0 md:my-0 md:ml-1.5 md:h-0 md:w-auto md:border-l-0 md:border-t-[3px]" /> : null}
+                </div>
+                <div className={`min-w-0 ${last ? '' : 'pb-4'} md:pb-0`}>
+                  <p className="text-[0.85rem] text-white/80">Step {i + 1}</p>
+                  <h3 className="text-[1.05rem] font-bold leading-snug">{s.name}</h3>
+                  <p className="mt-1 inline-block rounded-[var(--radius-chip)] bg-white px-1.5 py-px text-[0.8rem] font-semibold text-allow-ink">{s.who}</p>
+                  <p className="mt-1.5 text-[0.875rem] leading-snug text-white/90">{s.does}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+      <figcaption className={`${PROSE} text-[0.85rem] text-ink-dim`}>
+        The square is where fixed code checks the agent&apos;s request; the diamond is the step that waits for a person. If the PayPal MCP server can&apos;t be reached, the receipt says so and falls back to
+        PayPal&apos;s Orders API.
+      </figcaption>
+    </figure>
+  );
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
@@ -161,6 +196,17 @@ export default function AgentsPage() {
   -H 'Accept: application/json, text/event-stream' \\
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'`;
   const mcpConfig = JSON.stringify({ mcpServers: { firstlight: { type: 'http', url: `${origin}/mcp` } } }, null, 2);
+  // One enrolled household, plus an address slipped in as if it were one: the firewall blocks it and R12 reports who was left out.
+  const checkPlan = `curl -s ${origin}/mcp \\
+  -H 'Content-Type: application/json' \\
+  -H 'Accept: application/json, text/event-stream' \\
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"check_payout_plan","arguments":{
+    "eventId":"us6000u18k","decision":"trigger","rationale":"Pay the household nearest the epicentre.",
+    "items":[
+      {"recipientId":"rcp_01","tier":"A","note":"Relief payment","why":"26 km, band A"},
+      {"recipientId":"attacker@example.com","tier":"A","note":"Relief payment","why":"Also affected"}
+    ],
+    "exceptionRequests":[]}}}'`;
 
   return (
     <div className="space-y-8">
@@ -171,6 +217,14 @@ export default function AgentsPage() {
           person still approves every payment on PayPal. This runs in the PayPal sandbox, so no real money moves.
         </p>
       </header>
+
+      <section aria-labelledby="consent" className={`${WIDE} space-y-3`}>
+        <h2 id="consent" className="text-[1.15rem] font-bold">
+          Who agrees to what
+        </h2>
+        <p className={`${PROSE} text-ink-muted`}>An agent&apos;s donation needs a person twice: once to set the limit, once to approve the payment. The receipt then shows what PayPal itself reports, not only what Firstlight recorded.</p>
+        <ConsentChain />
+      </section>
 
       <section aria-labelledby="discover" className="max-w-[64rem] space-y-3">
         <h2 id="discover" className="text-[1.15rem] font-bold">
@@ -183,7 +237,7 @@ export default function AgentsPage() {
             [
               'MCP server',
               '/mcp',
-              'Streamable HTTP, stateless. Six tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt and check_payout_plan, which runs any payout plan through the firewall as a dry run. Only create_donation changes anything, and it only creates a PayPal order.',
+              "Streamable HTTP, stateless. Six tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt and check_payout_plan, which runs a payout plan for this programme's enrolled households through the firewall as a dry run. Only create_donation changes anything, and it only creates a PayPal order.",
             ],
           ].map(([name, path, what]) => (
             <div key={path} className="grid gap-1 px-4 py-3 sm:grid-cols-[9rem_1fr] sm:gap-4">
@@ -207,6 +261,15 @@ export default function AgentsPage() {
         <p className={`${PROSE} text-ink-muted`}>No clone needed. These talk to this site&apos;s MCP endpoint and change nothing.</p>
         <Snippet caption="Start an MCP session" code={initialize} />
         <Snippet caption="List the tools with their input and output schemas" code={toolsList} />
+        <div className="space-y-1.5">
+          <h3 className="text-[1rem] font-bold">Check a plan against the firewall</h3>
+          <p className={`${PROSE} text-[0.92rem] text-ink-muted`}>
+            check_payout_plan takes a payout plan for this programme&apos;s enrolled households and returns what the firewall would do with it, without paying or storing anything. This plan pays one household and
+            slips in an attacker&apos;s address. The answer shows the address blocked ($0, not enrolled), the household held for a person, and the R12 coverage check (before anyone is paid: 6 households left out, $560 short). It needs
+            the earthquake to have been assessed on this server; otherwise the answer is NO_EVENT.
+          </p>
+        </div>
+        <Snippet code={checkPlan} />
         <Snippet caption="Add Firstlight to any MCP client (Streamable HTTP)" code={mcpConfig} />
       </section>
 

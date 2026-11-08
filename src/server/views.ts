@@ -175,6 +175,14 @@ function isBatchOf(e: AuditEntry, planId: number): boolean {
   return batch?.id === batchId;
 }
 
+/** The batch table as the audit filters need it: local id, plan, PayPal's id. */
+function batchRefs(): BatchRef[] {
+  const rows = firstlight()
+    .db.prepare('SELECT b.id, b.paypal_batch_id, p.id AS plan_id FROM payout_batches b LEFT JOIN verdicts v ON v.digest = b.verdict_digest LEFT JOIN plans p ON p.id = v.plan_id')
+    .all() as { id: number; paypal_batch_id: string | null; plan_id: number | null }[];
+  return rows.map((r) => ({ id: r.id, planId: r.plan_id, paypalBatchId: r.paypal_batch_id }));
+}
+
 export function batchesView() {
   const rt = firstlight();
   const rows = rt.db.prepare('SELECT b.*, p.id AS plan_id FROM payout_batches b LEFT JOIN verdicts v ON v.digest = b.verdict_digest LEFT JOIN plans p ON p.id = v.plan_id ORDER BY b.id DESC').all() as {
@@ -188,6 +196,7 @@ export function batchesView() {
   }[];
   const towns = new Map(rt.registry.map((r) => [r.recipientId, r.town]));
   const entries = rt.pipeline.audit.entries();
+  const refs: BatchRef[] = rows.map((b) => ({ id: b.id, planId: b.plan_id, paypalBatchId: b.paypal_batch_id }));
   return rows.map((b) => {
     const items = rt.pipeline.ledger.batchItems(b.id);
     const clock = batchClock(entries, { planId: b.plan_id, batchId: b.id, paypalBatchId: b.paypal_batch_id, recipientIds: items.map((i) => i.recipient_id) });
@@ -208,6 +217,8 @@ export function batchesView() {
       feesCents: b.paypal_batch_id ? rt.pipeline.ledger.payoutFeeCents(b.paypal_batch_id) : 0,
       /** Measured from audit timestamps: assessed → approved → sent to PayPal → all items final. */
       clock,
+      /** This batch's own audit entries, oldest first: money reserved, sent to PayPal, webhooks, status updates, fees. */
+      audit: filterAudit(entries, refs, { batch: String(b.id) }).map((e) => ({ seq: e.seq, type: e.type, tsMs: e.tsMs })),
       items: items.map((i) => ({
         recipientId: i.recipient_id,
         town: towns.get(i.recipient_id) ?? '',
@@ -293,12 +304,62 @@ export async function reconcileView(now = Date.now()): Promise<ReconcileView> {
   return { configured: true, batches };
 }
 
-export function auditView(limit = 300) {
+// ── audit log, optionally filtered ──────────────────────────────────────────
+
+export type BatchRef = { id: number; planId: number | null; paypalBatchId: string | null };
+
+/** Narrow the audit log to one plan, one batch (our id or PayPal's) or some event types. Every part given must match. */
+export type AuditFilter = { plan?: number; batch?: string; types?: readonly string[] };
+
+/**
+ * Pure: the plan and batch an audit entry belongs to. Read from its payload
+ * (planId, batchId, paypalBatchId, or payoutBatchId on a webhook) and filled
+ * in from the batch table, so a status update or webhook that names only the
+ * batch still counts for its plan.
+ */
+export function auditRefs(e: Pick<AuditEntry, 'payload'>, batches: readonly BatchRef[]): { planId: number | null; batchId: number | null; paypalBatchId: string | null } {
+  const p = (e.payload && typeof e.payload === 'object' ? e.payload : {}) as Record<string, unknown>;
+  const num = (v: unknown) => (typeof v === 'number' && Number.isInteger(v) ? v : null);
+  const str = (v: unknown) => (typeof v === 'string' && v ? v : null);
+  const ownBatchId = num(p.batchId);
+  const ownPayPal = str(p.paypalBatchId) ?? str(p.payoutBatchId);
+  const batch = (ownBatchId !== null ? batches.find((b) => b.id === ownBatchId) : undefined) ?? (ownPayPal ? batches.find((b) => b.paypalBatchId === ownPayPal) : undefined);
+  return {
+    planId: num(p.planId) ?? batch?.planId ?? null,
+    batchId: batch?.id ?? ownBatchId,
+    paypalBatchId: ownPayPal ?? batch?.paypalBatchId ?? null,
+  };
+}
+
+/** A type filter part: an exact type, or a prefix written as `paypal.*`. */
+function typeMatches(type: string, wanted: readonly string[]): boolean {
+  return wanted.some((w) => (w.endsWith('.*') ? type.startsWith(w.slice(0, -1)) : type === w));
+}
+
+/** Pure: the entries that match every part of the filter, in the order given. */
+export function filterAudit<E extends Pick<AuditEntry, 'type' | 'payload'>>(entries: readonly E[], batches: readonly BatchRef[], f: AuditFilter): E[] {
+  const batchNum = f.batch !== undefined && /^[0-9]+$/.test(f.batch) ? Number(f.batch) : null;
+  return entries.filter((e) => {
+    if (f.types?.length && !typeMatches(e.type, f.types)) return false;
+    if (f.plan === undefined && f.batch === undefined) return true;
+    const r = auditRefs(e, batches);
+    if (f.plan !== undefined && r.planId !== f.plan) return false;
+    if (f.batch !== undefined && r.paypalBatchId !== f.batch && (batchNum === null || r.batchId !== batchNum)) return false;
+    return true;
+  });
+}
+
+/** Newest first. With a filter, `count` is still the whole log and `matched` the entries that match. Read-only. */
+export function auditView(limit = 300, filter: AuditFilter = {}) {
   const entries = firstlight().pipeline.audit.entries();
+  const filtered = filter.plan !== undefined || filter.batch !== undefined || Boolean(filter.types?.length);
+  const picked = filtered ? filterAudit(entries, batchRefs(), filter) : entries;
   return {
     count: entries.length,
     head: entries.at(-1)?.hash ?? null,
-    entries: entries
+    filter: filtered ? { plan: filter.plan ?? null, batch: filter.batch ?? null, types: [...(filter.types ?? [])] } : null,
+    matched: picked.length,
+    entries: picked
       .slice(-limit)
       .reverse()
       .map((e) => ({ seq: e.seq, tsMs: e.tsMs, type: e.type, hash: e.hash, prevHash: e.prevHash, payload: e.payload })),

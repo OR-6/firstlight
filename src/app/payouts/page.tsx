@@ -1,10 +1,12 @@
 'use client';
 
+import type { ProcessCellForExportParams, ProcessHeaderForExportParams } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Difference, BatchReconciliation } from '@/paypal/reconcile';
 import type { BatchView, ReconcileView } from '@/server/views';
+import { auditHref, trailGroups } from '@/ui/audit-links';
 import { Notice, StatusChip, itemStatus, usd, when, LoadError, Loading } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 import { SandboxEvidence, clockTime, duration } from '@/ui/SandboxEvidence';
@@ -103,11 +105,122 @@ function Clock({ c }: { c: BatchView['clock'] }) {
         ))}
       </ol>
       <p className="mt-0.5 text-[0.85rem] text-ink-dim">
-        Measured from the audit log.
+        Our clock, measured from the audit log&apos;s timestamps; PayPal keeps its own.
         {c.assessedMs !== null && c.finishedMs !== null ? ` Assessment to money final: ${duration(c.finishedMs - c.assessedMs)}, including the time a person took to approve.` : ''}
         {c.firstWebhookMs !== null ? ` First verified PayPal webhook at ${clockTime(c.firstWebhookMs)}.` : ''}
       </p>
     </div>
+  );
+}
+
+/** This batch's steps in the audit log, each linking to the filtered log at that entry. */
+function AuditTrail({ b }: { b: BatchView }) {
+  if (b.audit.length === 0) return null;
+  const batch = b.paypalBatchId ?? String(b.id);
+  const groups = trailGroups(b.audit);
+  return (
+    <div className="border-b border-line-soft px-5 py-3 text-[0.9rem]">
+      <p className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="text-ink-muted">In the audit log:</span>
+        {groups.map((g, n) => (
+          <span key={g.type}>
+            <Link
+              href={g.count === 1 ? auditHref({ batch }, g.firstSeq) : auditHref({ batch, type: g.type }, g.firstSeq)}
+              className="text-allow underline-offset-2 hover:underline"
+            >
+              <span className="num">#{g.firstSeq}</span> {g.label}
+            </Link>
+            {n < groups.length - 1 ? <span aria-hidden>,</span> : null}
+          </span>
+        ))}
+      </p>
+      <p className="mt-0.5 text-[0.85rem] text-ink-dim">
+        See{' '}
+        <Link href={auditHref({ batch })} className="text-allow underline-offset-2 hover:underline">
+          all {b.audit.length} entries for this batch
+        </Link>
+        {b.planId ? (
+          <>
+            , or{' '}
+            <Link href={auditHref({ plan: b.planId })} className="text-allow underline-offset-2 hover:underline">
+              everything for plan {b.planId}
+            </Link>{' '}
+            from its firewall verdict on
+          </>
+        ) : null}
+        .
+      </p>
+    </div>
+  );
+}
+
+/** CSV columns for finance: plain values, amounts in dollars. */
+const CSV_COLUMNS: Record<string, string> = {
+  recipientId: 'recipient',
+  town: 'town',
+  amountCents: 'amount_usd',
+  status: 'status',
+  transactionId: 'paypal_transaction_id',
+  errorName: 'failure_reason',
+};
+
+function csvCell(p: ProcessCellForExportParams<Item>): string {
+  const v = p.value as unknown;
+  if (p.column.getColId() === 'amountCents') return typeof v === 'number' ? (v / 100).toFixed(2) : '';
+  return v === null || v === undefined ? '' : String(v);
+}
+
+/** Below 768 px: one card per payout item instead of the grid. */
+function ItemCards({
+  items,
+  status,
+  cancelling,
+  onCancel,
+}: {
+  items: Item[];
+  status: (i: Item) => { label: string; tone: Parameters<typeof StatusChip>[0]['tone'] };
+  cancelling: string | null;
+  onCancel: (i: Item) => void;
+}) {
+  return (
+    <ul className="divide-y divide-line-soft md:hidden">
+      {items.map((i) => {
+        const st = status(i);
+        return (
+          <li key={i.recipientId} className="px-4 py-3">
+            <span className="flex items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block font-semibold leading-snug">{i.town || i.recipientId}</span>
+                <span className="num block text-[0.82rem] text-ink-dim">{i.recipientId}</span>
+              </span>
+              <span className="num shrink-0 text-[1.05rem] font-[800]">{usd(i.amountCents)}</span>
+            </span>
+            <span className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <StatusChip label={st.label} tone={st.tone} />
+              {i.errorName ? (
+                <span className="num text-[0.85rem] text-block-ink">{i.errorName.replaceAll('_', ' ').toLowerCase()}</span>
+              ) : i.transactionId ? (
+                <span className="num break-all text-[0.85rem] text-ink-muted">Transaction {i.transactionId}</span>
+              ) : null}
+            </span>
+            {i.canCancel || i.autoReturnMs !== null ? (
+              <span className="mt-2 flex flex-wrap items-center gap-2.5">
+                {i.canCancel ? (
+                  <button className="btn btn-stop h-8 px-2.5 text-[0.85rem]" onClick={() => onCancel(i)} disabled={cancelling !== null}>
+                    {cancelling === i.recipientId ? 'Cancelling…' : 'Cancel payout'}
+                  </button>
+                ) : null}
+                {i.autoReturnMs !== null ? (
+                  <span className="num text-[0.85rem] text-ink-muted">
+                    {i.canCancel ? 'or ' : ''}PayPal returns it {day(i.autoReturnMs)}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -116,6 +229,7 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const grid = useRef<AgGridReact<Item>>(null);
   const paid = b.items.filter((i) => i.status === 'SUCCESS');
   const batchLike = { verdict: { overall: 'ALLOW', items: [] }, approval: null, batch: { status: b.status, items: b.items } };
   const refresh = async () => {
@@ -143,6 +257,13 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
       setCancelling(null);
     }
   };
+  const downloadCsv = () =>
+    grid.current?.api.exportDataAsCsv({
+      fileName: `firstlight-batch-${b.paypalBatchId ?? `local-${b.id}`}.csv`,
+      columnKeys: Object.keys(CSV_COLUMNS),
+      processCellCallback: csvCell,
+      processHeaderCallback: (p: ProcessHeaderForExportParams<Item>) => CSV_COLUMNS[p.column.getColId()] ?? p.column.getColId(),
+    });
   const anyCancellable = b.items.some((i) => i.canCancel || i.autoReturnMs !== null);
   const unclaimed = b.items.filter((i) => i.status === 'UNCLAIMED' && i.autoReturnMs !== null);
   return (
@@ -178,6 +299,9 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
         ) : null}
         <div className="ml-auto flex items-center gap-3">
           {b.polling ? <span className="text-[0.85rem] text-hold">Checking PayPal every 2 s</span> : null}
+          <button className="btn h-8" onClick={downloadCsv} disabled={b.items.length === 0}>
+            Download CSV
+          </button>
           <button className="btn h-8" onClick={refresh} disabled={busy || !b.paypalBatchId}>
             {busy ? 'Checking…' : 'Check status now'}
           </button>
@@ -203,7 +327,11 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
           <Notice tone="error">{error}</Notice>
         </div>
       ) : null}
+      <AuditTrail b={b} />
+      <ItemCards items={b.items} status={(i) => itemStatus(batchLike, i.recipientId, 'ALLOW')} cancelling={cancelling} onCancel={cancel} />
+      <div className="hidden md:block">
       <AgGridReact<Item>
+        ref={grid}
         theme={gridTheme}
         domLayout="autoHeight"
         rowData={b.items}
@@ -213,6 +341,9 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
           { field: 'recipientId', headerName: 'Recipient', width: 140, cellClass: 'font-semibold' },
           { field: 'town', headerName: 'Town', flex: 1, minWidth: 150 },
           { field: 'amountCents', headerName: 'Amount', width: 120, type: 'rightAligned', cellClass: 'num font-semibold', valueFormatter: (p) => usd(p.value) },
+          // Export-only columns: the grid shows them combined below.
+          { field: 'transactionId', hide: true },
+          { field: 'errorName', hide: true },
           {
             field: 'status',
             headerName: 'PayPal status',
@@ -256,6 +387,7 @@ function Batch({ b, reconciliation, reconcileState }: { b: BatchView; reconcilia
             : []),
         ]}
       />
+      </div>
     </section>
   );
 }
