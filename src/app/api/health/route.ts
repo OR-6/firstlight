@@ -11,8 +11,8 @@ export const dynamic = 'force-dynamic';
 export function GET() {
   try {
     const rt = firstlight();
-    const auditEntries = (rt.db.prepare('SELECT COUNT(*) AS n FROM audit_log').get() as { n: number }).n;
-    return Response.json({ ok: true, sandbox: true, db: 'ok', llmMode: rt.llmMode, paypalConfigured: paypalConfigured(), auditEntries });
+    const audit = rt.pipeline.audit.anchor();
+    return Response.json({ ok: true, sandbox: true, db: 'ok', llmMode: rt.llmMode, paypalConfigured: paypalConfigured(), audit: { entries: audit.count, headHash: audit.headHash } });
   } catch {
     return Response.json({ ok: false, sandbox: true, db: 'unavailable' }, { status: 503 });
   }

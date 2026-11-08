@@ -150,6 +150,7 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 | `EXECUTE_LIMIT_PER_HOUR` | Public-demo cap on real sandbox payout batches |
 | `FIRSTLIGHT_DB` | SQLite path (default `data/firstlight.db`) |
 | `FIREWALL_KILL_SWITCH` | `1` blocks every payout (R7) |
+| `FIRSTLIGHT_RESETTABLE_DEMO` | `true` (default with `DEMO_MODE=replay` or unset): PayPal keys are scoped to this database, so a demo reset pays again in the sandbox. `false` (default otherwise): keys come from the payout itself and stay stable if the database is lost |
 | `RESET_COOLDOWN_MS` | Minimum gap between demo resets (default 60 s) |
 | `PAYPAL_SMOKE_RECEIVER` | Sandbox personal account for `npm run smoke:payout` |
 | `FIRSTLIGHT_URL`, `FIRSTLIGHT_ALLOWANCE_TOKEN` | Where `npm run samaritan` points (e.g. the hosted demo) and the allowance token a person created on /agents |
