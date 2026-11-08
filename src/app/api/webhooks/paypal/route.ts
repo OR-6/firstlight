@@ -1,5 +1,5 @@
 import { handlePayPalWebhook } from '@/pipeline/webhooks';
-import { firstlight } from '@/server/runtime';
+import { firstlight, tracked } from '@/server/runtime';
 import { readText } from '@/server/http';
 
 export const runtime = 'nodejs';
@@ -10,15 +10,19 @@ export async function POST(req: Request) {
   const rt = firstlight();
   if (Number(req.headers.get('content-length') ?? 0) > 256_000) return Response.json({ error: 'BODY_TOO_LARGE' }, { status: 413 });
   try {
-    const out = await handlePayPalWebhook({
-      pipeline: rt.pipeline,
-      db: rt.db,
-      paypal: rt.paypal(),
-      webhookId: process.env.PAYPAL_WEBHOOK_ID,
-      headers: req.headers,
-      rawBody: await readText(req, 256_000),
-      onCaptureCompleted: (orderId, captureId, cents) => rt.donations.onCaptureCompleted(orderId, captureId, cents),
-    });
+    const rawBody = await readText(req, 256_000);
+    // Tracked: CHECKOUT.ORDER.APPROVED captures with PayPal, so a demo reset must wait for it.
+    const out = await tracked(() =>
+      handlePayPalWebhook({
+        pipeline: rt.pipeline,
+        db: rt.db,
+        paypal: rt.paypal(),
+        webhookId: process.env.PAYPAL_WEBHOOK_ID,
+        headers: req.headers,
+        rawBody,
+        donations: rt.donations,
+      }),
+    );
     return Response.json(out.body, { status: out.status });
   } catch (err) {
     console.error(err);

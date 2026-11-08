@@ -99,12 +99,13 @@ describe('donations', () => {
       capture: async () => ({ orderId: 'ORDER12345', status: 'COMPLETED', captureId: 'CAP1', captureStatus: 'COMPLETED', amountCents: 500 }),
     };
     const svc = new DonationService({ db: dbOf(pipeline), audit: pipeline.audit, ledger: pipeline.ledger, orders: () => orders as never, baseUrl: () => 'https://x' });
-    return { svc, pipeline, recover: () => (fail = false) };
+    const token = svc.createAllowance({ label: 'samaritan', cap_usd: 100, expires_in_hours: 24 }).allowanceToken;
+    return { svc, pipeline, token, recover: () => (fail = false) };
   }
 
   it('a retry with the same idempotency key after PayPal failed goes through', async () => {
-    const { svc, recover } = service();
-    const req = { amount_usd: 5, donor_ref: 'samaritan', idempotency_key: 'key-12345678' };
+    const { svc, recover, token } = service();
+    const req = { amount_usd: 5, allowance_token: token, idempotency_key: 'key-12345678' };
     await expect(svc.create(req, 'agent')).rejects.toMatchObject({ code: 'PAYPAL' });
     recover();
     const r = await svc.create(req, 'agent');
@@ -112,10 +113,10 @@ describe('donations', () => {
   });
 
   it('reusing an idempotency key for a different amount is refused', async () => {
-    const { svc, recover } = service();
+    const { svc, recover, token } = service();
     recover();
-    await svc.create({ amount_usd: 5, donor_ref: 'samaritan', idempotency_key: 'key-12345678' }, 'agent');
-    await expect(svc.create({ amount_usd: 50, donor_ref: 'samaritan', idempotency_key: 'key-12345678' }, 'agent')).rejects.toMatchObject({ code: 'IDEMPOTENCY_MISMATCH' });
+    await svc.create({ amount_usd: 5, allowance_token: token, idempotency_key: 'key-12345678' }, 'agent');
+    await expect(svc.create({ amount_usd: 50, allowance_token: token, idempotency_key: 'key-12345678' }, 'agent')).rejects.toMatchObject({ code: 'IDEMPOTENCY_MISMATCH' });
   });
 
   it('invalid donations are counted, not written to the audit chain', async () => {

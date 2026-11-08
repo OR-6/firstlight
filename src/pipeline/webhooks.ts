@@ -1,9 +1,19 @@
 import type { Db } from '../ledger/db';
 import type { PayPalClient } from '../paypal/client';
-import { payoutBatchIdOf, readWebhookHeaders, verifyWebhookSignature, type PayPalWebhookEvent } from '../paypal/webhooks';
+import type { CaptureEvent, ReturnEvent } from '../donations/service';
+import { donationWebhookOf, payoutBatchIdOf, readWebhookHeaders, verifyWebhookSignature, type PayPalWebhookEvent } from '../paypal/webhooks';
 import type { Pipeline } from './pipeline';
 
 export type WebhookOutcome = { status: number; body: Record<string, unknown> };
+
+/** What the webhook handler needs from the donation side (DonationService implements it). */
+export interface DonationWebhookSink {
+  onCaptureCompleted(orderId: string | undefined, captureId: string, amountCents: number | null): unknown;
+  onCapturePending(e: CaptureEvent): unknown;
+  onCaptureDenied(e: CaptureEvent): unknown;
+  onCaptureReturned(kind: 'refund' | 'reversal', e: ReturnEvent): unknown;
+  onOrderApproved(orderId: string): Promise<unknown>;
+}
 
 /**
  * Handle one PayPal webhook delivery (SPEC §5.7):
@@ -11,7 +21,10 @@ export type WebhookOutcome = { status: number; body: Record<string, unknown> };
  *  2. verify the signature with PayPal; unverified deliveries change nothing;
  *  3. de-duplicate on PayPal's event id;
  *  4. for payout events, GET the batch from PayPal (webhook payloads carry no item
- *     detail and no error objects) and update the ledger from that.
+ *     detail and no error objects) and update the ledger from that;
+ *  5. for donation events (order approved, capture completed/pending/denied,
+ *     refunded, reversed), hand them to the donation service.
+ * If processing fails, the de-duplication row is removed so PayPal's retry is processed.
  */
 export async function handlePayPalWebhook(input: {
   pipeline: Pipeline;
@@ -21,7 +34,9 @@ export async function handlePayPalWebhook(input: {
   headers: { get(name: string): string | null };
   rawBody: string;
   now?: number;
-  /** PAYMENT.CAPTURE.COMPLETED for a donation order. */
+  /** Donation lifecycle (DonationService). */
+  donations?: DonationWebhookSink;
+  /** PAYMENT.CAPTURE.COMPLETED only, when no `donations` sink is given (older callers). */
   onCaptureCompleted?: (orderId: string | undefined, captureId: string, amountCents: number | null) => unknown;
 }): Promise<WebhookOutcome> {
   const { pipeline, db } = input;
@@ -69,11 +84,28 @@ export async function handlePayPalWebhook(input: {
       }
       return { status: 200, body: { ok: true, ignored: 'unknown batch' } };
     }
-    if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED' && input.onCaptureCompleted) {
-      const r = (event.resource ?? {}) as { id?: string; amount?: { value?: string }; supplementary_data?: { related_ids?: { order_id?: string } } };
-      if (r.id) {
-        const cents = r.amount?.value ? Math.round(Number(r.amount.value) * 100) : null;
-        await input.onCaptureCompleted(r.supplementary_data?.related_ids?.order_id, r.id, Number.isFinite(cents) ? cents : null);
+    const d = donationWebhookOf(event);
+    if (d) {
+      const sink = input.donations;
+      switch (d.kind) {
+        case 'capture_completed':
+          if (sink) await sink.onCaptureCompleted(d.orderId ?? undefined, d.captureId, d.amountCents);
+          else if (input.onCaptureCompleted) await input.onCaptureCompleted(d.orderId ?? undefined, d.captureId, d.amountCents);
+          break;
+        case 'capture_pending':
+          await sink?.onCapturePending({ orderId: d.orderId, captureId: d.captureId, reason: d.reason });
+          break;
+        case 'capture_denied':
+          await sink?.onCaptureDenied({ orderId: d.orderId, captureId: d.captureId, reason: d.reason });
+          break;
+        case 'refund':
+        case 'reversal':
+          await sink?.onCaptureReturned(d.kind, { captureId: d.captureId, orderId: d.orderId, refId: d.refId, eventId: event.id, amountCents: d.amountCents });
+          break;
+        case 'order_approved':
+          // Same idempotent capture as the return URL, for donors who approved but never came back.
+          await sink?.onOrderApproved(d.orderId);
+          break;
       }
     }
     return { status: 200, body: { ok: true } };
