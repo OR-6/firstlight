@@ -1,7 +1,7 @@
 {
-  "key": "5f3df3619b01a16fbef896b338b5bc67d9cb5f728e7e80ffc8f77a75ee623d68",
+  "key": "195c9db6bf853b6058532f364718f286a23d4d7404cd77b82b12e3f27e7b2c23",
   "model": "claude-opus-5-5",
-  "recordedAt": "2026-11-08T17:16:47.392Z",
+  "recordedAt": "2026-11-08T17:46:25.283Z",
   "request": {
     "model": "claude-opus-5-5",
     "max_tokens": 16000,
@@ -63,7 +63,7 @@
       },
       {
         "name": "list_registry_near",
-        "description": "List pre-registered recipients with distance from the epicentre, the highest tier their distance band allows, vulnerability flags and locale. No contact details are available.",
+        "description": "List pre-registered recipients with distance from the epicentre, the highest tier their distance band allows, and whether each is eligible for a one-tier uplift (the condition itself is not shared). No contact details are available.",
         "strict": true,
         "input_schema": {
           "type": "object",
@@ -183,13 +183,13 @@
   },
   "response": {
     "model": "claude-opus-5-5",
-    "id": "msg_011CgqqgHzfFhrZqBcNvDztv",
+    "id": "msg_011CgqswMCJ2p3Jf7pntMMRk",
     "type": "message",
     "role": "assistant",
     "content": [
       {
         "type": "tool_use",
-        "id": "toolu_01XRX2Ryv85D4LaHWWv9Rtim",
+        "id": "toolu_01H48d9WsSqmpjbpwMZ9aiwz",
         "name": "get_event",
         "input": {
           "eventId": "us6000u18k"
@@ -200,7 +200,7 @@
       },
       {
         "type": "tool_use",
-        "id": "toolu_0194nMKg1VddEmmR5nuE48Td",
+        "id": "toolu_01GP2udU2k6K4fWE1tKAr8ah",
         "name": "get_corroboration",
         "input": {
           "eventId": "us6000u18k"
@@ -211,7 +211,7 @@
       },
       {
         "type": "tool_use",
-        "id": "toolu_01HPtiomy9gTXkWuCMQoPfYo",
+        "id": "toolu_01BA86hjuRdVrmov9kwxHJwB",
         "name": "read_news",
         "input": {
           "eventId": "us6000u18k"
@@ -222,7 +222,7 @@
       },
       {
         "type": "tool_use",
-        "id": "toolu_011oyunEW5XNUG9HrHRZELmE",
+        "id": "toolu_01Ttt7AaNRtFzWwyBPxRVabo",
         "name": "list_registry_near",
         "input": {
           "eventId": "us6000u18k"
@@ -237,7 +237,7 @@
     "stop_sequence": null,
     "stop_details": null,
     "usage": {
-      "input_tokens": 2095,
+      "input_tokens": 2112,
       "cache_creation_input_tokens": 0,
       "cache_read_input_tokens": 0,
       "cache_creation": {
@@ -246,7 +246,7 @@
       },
       "iterations": [
         {
-          "input_tokens": 2095,
+          "input_tokens": 2112,
           "output_tokens": 213,
           "cache_read_input_tokens": 0,
           "cache_creation_input_tokens": 0,

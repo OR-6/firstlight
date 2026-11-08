@@ -38,7 +38,7 @@ export const AGENT_TOOLS: BetaTool[] = [
   },
   {
     name: 'list_registry_near',
-    description: 'List pre-registered recipients with distance from the epicentre, the highest tier their distance band allows, vulnerability flags and locale. No contact details are available.',
+    description: 'List pre-registered recipients with distance from the epicentre, the highest tier their distance band allows, and whether each is eligible for a one-tier uplift (the condition itself is not shared). No contact details are available.',
     strict: true,
     input_schema: eventIdInput,
   },

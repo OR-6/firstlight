@@ -103,3 +103,31 @@ describe('payout notes are fixed templates (the agent cannot message recipients)
     for (const r of REGISTRY) expect(Object.keys(config.payoutNotes)).toContain(r.locale);
   });
 });
+
+describe('R12 also runs when the trigger only warns (D101)', () => {
+  it('degraded corroboration plus households left out: a person sees who', () => {
+    const v = evaluatePlan(plan([{ recipientId: 'rcp_a10', tier: 'A' }]), ctx({ corroboration: [] }));
+    expect(v.planRules.find((r) => r.id === 'R8')?.status).toBe('warn');
+    expect(r12(v).map((r) => r.reasonCode)).toContain('ELIGIBLE_OMITTED');
+  });
+
+  it("a plan using the event's own alias id is not blocked", () => {
+    const v = evaluatePlan(plan(full(), { eventId: 'pt26282000' }), ctx());
+    expect(v.planRules.map((r) => r.reasonCode)).not.toContain('PLAN_EVENT_MISMATCH');
+  });
+});
+
+describe('floor plan under a short pool', () => {
+  it('funds the highest tiers first and R12 names who is left out', async () => {
+    const { floorPlan } = await import('../src/firewall/floor');
+    const c = ctx({ ledger: emptyLedger(300_00) });
+    const raw = floorPlan(c, 'test');
+    const total = raw.items.reduce((t, i) => t + c.config.tierAmountsCents[i.tier], 0);
+    expect(total).toBeLessThanOrEqual(300_00);
+    // Two tier-A households first ($240), then the leftover $60 still funds a tier-C household.
+    expect(raw.items.map((i) => i.tier)).toEqual(['A', 'A', 'C']);
+    const v = evaluatePlan(raw, c);
+    expect(v.overall).not.toBe('BLOCK');
+    expect(r12(v).map((r) => r.reasonCode)).toContain('ELIGIBLE_OMITTED');
+  });
+});

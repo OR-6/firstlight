@@ -203,3 +203,11 @@ Round 2 averaged 77/100 (round 1: 74). These changes answer it.
 | D98 | Receipts confirmed by PayPal | Receipts add `paypalConfirmed`, read live through PayPal's hosted sandbox MCP server (SSE `/sse`, bearer = client-credentials token, allowlist `get_order` only, host pinned to mcp.sandbox.paypal.com), falling back to the Server SDK `getOrder`. Cached 30 s, at most 30 lookups a minute; failure gives null plus a reason. Covers order status, capture id and amount as PayPal reports them now; not who received the money (the pool is shared). The documented Streamable HTTP endpoint `/http` returned 404 on 2026-11-08; `/sse` works. |
 | D99 | Staff refunds | `POST /api/donations/{receiptId}/refund` (open like the other demo console actions) refunds through Payments refund-capture with a PayPal-Request-Id, books through the refund-webhook path (idempotent per refund id), refuses over-refunds and refunds that would take the pool below zero, audited with `initiatedBy: operator`. |
 | D100 | Atomic donation credit; agent-only idempotency keys | The ledger credit, status update and `donation.captured` audit entry commit in one transaction. Only agent donations may send `idempotency_key` (scoped to the allowance): people share names like "Anonymous", so a name-scoped key could hand one person another's approval link. |
+
+## Judge round 3 (2026-11-08)
+
+Round 3 averaged 79.6/100 (round 2: 77.0, round 1: 74.0).
+
+| # | Question | Decision |
+|---|---|---|
+| D101 | Firewall gaps found in round 3 | R12 now runs whenever R8 doesn't block, so a degraded or uncorroborated trigger (which already needs a person) also shows who is left out. R9 accepts the event's own alias ids, so an honest agent using `pt26282000` isn't blocked. The floor plan fills a short pool highest tier first (then leftovers) instead of blocking everyone; R12 names whoever doesn't fit. The sentinel's `DISCREDIT_RECIPIENTS` pattern no longer matches the agent's own denials ("I found no … fake recipients"), which had flagged the clean run; findings now quote the whole sentence. The agent tool description now matches what it returns (`upliftEligible`), which changed the agent's input, so the recorded runs were re-recorded again (5 orphans pruned). Held-out patterns: 8/30. |

@@ -17,7 +17,7 @@ export function r9PlanIntegrity(parsed: ParsedPlan, ctx: FirewallContext): RuleR
   const { plan, unknownFields } = parsed;
   const out: RuleResult[] = [];
 
-  if (plan.eventId !== ctx.event.id) {
+  if (plan.eventId !== ctx.event.id && !ctx.event.aliases.includes(plan.eventId)) {
     out.push(r('block', 'PLAN_EVENT_MISMATCH', `plan is for ${JSON.stringify(plan.eventId)}, context is ${ctx.event.id}`));
   }
   if (plan.decision === 'hold') {

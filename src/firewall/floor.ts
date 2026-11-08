@@ -12,7 +12,22 @@ import type { FirewallContext } from './types';
  * Pure: same context, same plan.
  */
 export function floorPlan(ctx: FirewallContext, reason: string) {
-  const items = eligibleRecipients(ctx, sameDisasterEventIds(ctx)).map((e) => ({
+  // If the pool can't cover everyone, fill it highest tier first (closest and uplifted households),
+  // then by id for determinism; R12 then names whoever is left out, so a person sees the gap.
+  const RANK = { A: 0, B: 1, C: 2 } as const;
+  const owed = eligibleRecipients(ctx, sameDisasterEventIds(ctx)).sort(
+    (a, b) => RANK[a.maxTier] - RANK[b.maxTier] || (a.recipientId < b.recipientId ? -1 : 1),
+  );
+  const budget = Math.min(ctx.ledger.poolBalanceCents, ctx.config.eventCapCents);
+  let used = 0;
+  const funded = owed.filter((e) => {
+    const c = ctx.config.tierAmountsCents[e.maxTier];
+    if (used + c > budget) return false;
+    used += c;
+    return true;
+  });
+  const short = owed.length - funded.length;
+  const items = funded.map((e) => ({
     recipientId: e.recipientId,
     tier: e.maxTier,
     note: '',
@@ -21,7 +36,7 @@ export function floorPlan(ctx: FirewallContext, reason: string) {
   return {
     eventId: ctx.event.id,
     decision: 'escalate' as const,
-    rationale: `Firewall floor plan, drafted by deterministic code, not the agent: every enrolled household owed for this earthquake at its full tier. Reason: ${reason}`,
+    rationale: `Firewall floor plan, drafted by deterministic code, not the agent: every enrolled household owed for this earthquake at its full tier${short ? ` (${short} left out because the pool can't cover them; highest tiers first)` : ''}. Reason: ${reason}`,
     items,
     exceptionRequests: [] as { recipientId: string; reason: string }[],
   };

@@ -89,7 +89,9 @@ export function evaluatePlan(rawPlan: unknown, ctx: FirewallContext): Verdict {
   for (const i of items) if (itemBlocked(i)) i.amountCents = 0;
 
   planRules.push(r5Budget(total, ctx));
-  const triggerMet = planRules.some((r) => r.id === 'R8' && r.status === 'pass');
+  // R12 runs whenever R8 doesn't block: a degraded or uncorroborated trigger still goes to a
+  // person, who must then also see who is left out.
+  const triggerMet = planRules.some((r) => r.id === 'R8' && r.status !== 'block');
   planRules.push(...r12Coverage({ decision: plan?.decision ?? null, items, triggerMet, sameDisasterIds: twins }, ctx));
   const anyWarn = planRules.some((r) => r.status === 'warn') || items.some((i) => i.ruleTrace.some((r) => r.status === 'warn'));
   planRules.push(
