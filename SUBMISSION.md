@@ -64,6 +64,7 @@ An AI agent could make that call in minutes. But nobody should hand a language m
 - **$0 to anyone not owed in 27 of 27 attacks** against an agent we scripted to obey every one, judged against a hand-written table of what each household is owed. Every attack is also held by a firewall rule other than the $300 approval limit, and agent-written text reached PayPal in none. The advisory sentinel (patterns plus a classifier model) flagged them too, but the guarantee doesn't depend on it.
 - **A poisoned feed can't quietly withhold aid:** if the agent holds, forges an event id or leaves people out, deterministic code drafts the full owed plan for a person to approve.
 - Real sandbox payouts: batch `9GE626X9SA3NE` paid $680 to seven sandbox accounts in about 25 seconds, confirmed by seven signature-verified `PAYMENT.PAYOUTS-ITEM.SUCCEEDED` webhooks.
+- **The firewall is an MCP tool other agents can call:** `check_payout_plan` dry-runs any payout plan against R1–R12 before anything is sent to PayPal.
 - Any MCP client can donate with no SDK: `tools/list` publishes the enforced limits, refusals come back as typed codes (`ALLOWANCE_UNKNOWN`, `ALLOWANCE_EXCEEDED`), and our example agent recomputes every audit hash itself.
 - An honest residual-risk table: a reviewer who approves without reading would still let under-payment through (the page shows the dollar shortfall), and an insider swapping a payee address is not stopped. We say so on the page.
 - Over 560 tests, including a seeded property test over 3,000 compromised-agent plans, and purity tests (a source scan plus a walk of everything the firewall imports) that fail if it ever reads the clock, environment, database, network or an LLM. CI runs them, lint and the red team on every push.
@@ -73,7 +74,6 @@ For AI agents that move money, "make the model safer" is the wrong place to put 
 
 ### What's next
 - Sign in with PayPal when creating an allowance, so the cap is bound to a verified PayPal customer up front, not at its first approved payment.
-- The payout firewall as an MCP tool, so any agent can dry-run a PayPal Payouts batch against R1–R12 before it sends anything.
 - Bands from USGS ShakeMap intensity at each home instead of distance (today: distance bands scaled by magnitude), and enrolment on top of an existing government social registry (shock-responsive social protection).
 - A pilot design with a cash-programme partner in Central America: transfer values set from the local minimum expenditure basket and household size, and delivery through whatever rail households have (PayPal, Venmo, or a licensed partner's cash-out).
 - More hazards (floods, cyclones, heat) through adapters that feed the same firewall.

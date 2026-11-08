@@ -151,7 +151,7 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 
 ## For other agents
 
-**Agents donating for a person.** A person opens [/agents](https://firstlight.onrender.com/agents), names the agent, sets a cap ($1–$100) and an expiry (1 hour to 7 days), and gets a one-time `alw_…` token. The agent connects to the MCP server and calls `get_allowance`, then `create_donation {amount_usd, allowance_token}`:
+**Agents donating for a person.** A person opens [/agents](https://firstlight.onrender.com/agents), names the agent, sets a cap ($1–$100) and an expiry (1 hour to 7 days), and gets a one-time `alw_…` token for the agent plus a manage key of their own. The agent connects to the MCP server and calls `get_allowance`, then `create_donation {amount_usd, allowance_token}`:
 
 ```text
 https://firstlight.onrender.com/mcp     # Streamable HTTP; add it to any MCP client
@@ -161,7 +161,9 @@ https://firstlight.onrender.com/mcp     # Streamable HTTP; add it to any MCP cli
 - **A person still approves every payment on PayPal**; nothing is charged otherwise. Each allowance is tied to the PayPal account that approves its first payment: a payment approved by another account isn't captured.
 - **Receipts are confirmed by PayPal itself**: `paypalConfirmed` comes from PayPal's hosted sandbox MCP server (read-only, `get_order` only), with the Server SDK as fallback. Staff can refund a donation from the console; the pool is debited once.
 - Receipts reference audit entries an agent can check itself: the hash formula is in the manifest (`receiptFormat.auditChain`), and `scripts/verify-chain.ts` recomputes it without importing any Firstlight code. A receipt proves the donation is in the audit log and shows pool totals; it does not prove where each dollar went, because the pool is shared.
-- Manifest: `/.well-known/firstlight.json`, summary: `/llms.txt`. MCP tools: `get_pool_status`, `list_active_events`, `get_allowance`, `create_donation`, `get_receipt`.
+- **Agents can't grant themselves permission:** allowances are created only from the /agents form (a same-origin request with a single-use nonce), and the person gets a separate manage key that lists and revokes them; the agent's token can't.
+- **The firewall is agent-callable:** MCP `check_payout_plan` dry-runs any payout plan against the firewall before sending anything to PayPal, and returns the verdict, the amounts the firewall computes, findings in plain words and the coverage shortfall. No money moves, nothing is stored.
+- Manifest: `/.well-known/firstlight.json`, summary: `/llms.txt`. MCP tools: `get_pool_status`, `list_active_events`, `get_allowance`, `create_donation`, `get_receipt`, `check_payout_plan`.
 - `npm run samaritan` is a scripted (not LLM) example donor: `FIRSTLIGHT_ALLOWANCE_TOKEN=alw_… FIRSTLIGHT_URL=https://firstlight.onrender.com npm run samaritan`.
 
 ## For judges
