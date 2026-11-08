@@ -106,7 +106,7 @@ export default function MissionControl() {
           <div className="space-y-4 border-b border-line-soft p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <PlanHeader plan={plan} event={event} headingId="plan-title" />
-              <p className="text-[0.85rem] text-ink-dim">Select a row to see every firewall check for that recipient.</p>
+              <p className="text-[0.85rem] text-ink-dim">Select a household to see every firewall check for it.</p>
             </div>
             {needsDecision ? <ApprovalForm plan={plan} compact /> : null}
             {canSend ? <SendPayouts plan={plan} /> : null}

@@ -3,13 +3,13 @@
 import Link from 'next/link';
 import type { EventView, PlanView } from '@/server/views';
 import { shortHash, usd } from './format';
+import { Mark, type State } from './SignMark';
 
 /**
- * The path a relief payment takes, left to right. Each stop shows its real
- * state and the audit-log hash that proves it happened. This is a genuine
- * sequence, so it is drawn as one.
+ * The path a relief payment takes, left to right (top to bottom on phones).
+ * Each stop shows its real state and the audit-log hash that proves it
+ * happened. This is a genuine sequence, so it is drawn as one.
  */
-type State = 'done' | 'wait' | 'stop' | 'idle';
 type Stop = { name: string; state: State; headline: string; detail: string; hash?: string; seq?: number };
 
 export function buildStops(event: EventView | null, plan: PlanView | null): Stop[] {
@@ -112,17 +112,28 @@ export function buildStops(event: EventView | null, plan: PlanView | null): Stop
   return [signal, sentinel, agent, firewall, approval, paypal, recipients];
 }
 
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
+
+/** "Stage 4 of 7: Firewall, needs approval": the first stage that is not done yet. */
+export function currentStage(stops: Stop[]): string {
+  const i = stops.findIndex((s) => s.state !== 'done');
+  if (i < 0) return `All ${stops.length} stages done`;
+  const s = stops[i]!;
+  return `Stage ${i + 1} of ${stops.length}: ${s.name}, ${lowerFirst(s.headline)}`;
+}
+
 /** Drawn as a green guide sign: white lettering, white inset border, sign-shaped marks. */
 export function MoneyPath({ stops }: { stops: Stop[] }) {
   return (
     <section aria-label="Path of this payment" className="rounded-[var(--radius-panel)] bg-allow p-[3px] text-white">
       <div className="rounded-[4px] border-2 border-white/90">
-        <ol className="grid snap-x auto-cols-[minmax(9.5rem,1fr)] grid-flow-col overflow-x-auto">
+        <PhonePath stops={stops} />
+        <ol className="hidden auto-cols-[minmax(7.5rem,1fr)] grid-flow-col md:grid">
           {stops.map((s, i) => {
             const next = stops[i + 1];
             const reached = s.state !== 'idle';
             return (
-              <li key={s.name} className="relative snap-start px-4 pb-4 pt-4">
+              <li key={s.name} className="relative min-w-0 px-3 pb-4 pt-4 lg:px-4">
                 <div className="mb-2.5 flex h-5 items-center" aria-hidden>
                   <Mark state={s.state} />
                   {next ? (
@@ -161,29 +172,55 @@ export function MoneyPath({ stops }: { stops: Stop[] }) {
   );
 }
 
-/** Sign marks: done = white disc with check, waiting = yellow warning diamond, blocked = red octagon. */
-function Mark({ state }: { state: State }) {
-  if (state === 'done')
-    return (
-      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0">
-        <circle cx="10" cy="10" r="9" fill="#fff" />
-        <path d="M6 10.4l2.8 2.8 5.4-6" fill="none" stroke="var(--color-allow)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  if (state === 'wait')
-    return (
-      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0">
-        <path d="M10 .8L19.2 10 10 19.2.8 10z" fill="var(--color-hold-fill)" stroke="#000" strokeWidth="1.2" strokeLinejoin="round" />
-        <path d="M10 5.6v5.2" stroke="#000" strokeWidth="2" strokeLinecap="round" />
-        <circle cx="10" cy="13.9" r="1.15" fill="#000" />
-      </svg>
-    );
-  if (state === 'stop')
-    return (
-      <svg width="20" height="20" viewBox="0 0 20 20" className="shrink-0">
-        <path d="M6.3.8h7.4l5.5 5.5v7.4l-5.5 5.5H6.3L.8 13.7V6.3z" fill="var(--color-block)" stroke="#fff" strokeWidth="1.2" />
-        <path d="M5.4 10h9.2" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
-      </svg>
-    );
-  return <span className="block h-[18px] w-[18px] shrink-0 rounded-full border-2 border-white/45" />;
+/**
+ * Below 768 px: a summary plate naming the current stage, then every stage as
+ * a vertical list (mark and connector on the left), so nothing scrolls sideways.
+ */
+function PhonePath({ stops }: { stops: Stop[] }) {
+  return (
+    <div className="md:hidden">
+      <p className="border-b-2 border-white/90 px-4 py-2.5 text-[1rem] font-bold">{currentStage(stops)}</p>
+      <ol className="px-4 py-3">
+        {stops.map((s, i) => {
+          const last = i === stops.length - 1;
+          const reached = s.state !== 'idle';
+          return (
+            <li key={s.name} className="grid grid-cols-[20px_minmax(0,1fr)] gap-x-3">
+              <div className="flex flex-col items-center" aria-hidden>
+                <span className="pt-0.5">
+                  <Mark state={s.state} />
+                </span>
+                {!last ? (
+                  <span
+                    className="my-1 w-0 flex-1"
+                    style={s.state === 'done' ? { borderLeft: '3px solid #fff' } : { borderLeft: `2px dashed rgb(255 255 255 / ${reached ? 0.8 : 0.4})` }}
+                  />
+                ) : null}
+              </div>
+              <div className={`min-w-0 ${last ? '' : 'pb-3'}`}>
+                <p className="leading-snug">
+                  <span className="text-[0.85rem] text-white/80">{s.name}</span>{' '}
+                  <span className={`text-[1rem] font-bold ${reached ? 'text-white' : 'text-white/55'}`}>{s.headline}</span>
+                </p>
+                {s.detail || s.hash ? (
+                  <p className="num mt-0.5 break-words text-[0.85rem] text-white/85">
+                    {s.detail}
+                    {s.hash ? (
+                      <Link
+                        href={`/audit#seq-${s.seq}`}
+                        className={`${s.detail ? 'ml-2' : ''} text-white/75 underline-offset-2 hover:text-white hover:underline focus-visible:outline-white`}
+                        title={`Audit entry ${s.seq}: ${s.hash}`}
+                      >
+                        #{shortHash(s.hash)}
+                      </Link>
+                    ) : null}
+                  </p>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
 }
