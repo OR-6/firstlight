@@ -20,6 +20,7 @@ export function openDb(path = ':memory:'): Db {
 }
 
 function migrate(db: Db): void {
+  dropVerdictDigestUnique(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS events (
       id            TEXT PRIMARY KEY,
@@ -85,11 +86,13 @@ function migrate(db: Db): void {
 
     CREATE TABLE IF NOT EXISTS verdicts (
       plan_id       INTEGER PRIMARY KEY REFERENCES plans(id),
-      digest        TEXT NOT NULL UNIQUE,
+      -- Not unique: re-assessing an unchanged event gives the same digest (same money).
+      digest        TEXT NOT NULL,
       overall       TEXT NOT NULL,
       verdict_json  TEXT NOT NULL,
       created_ms    INTEGER NOT NULL
     );
+    CREATE INDEX IF NOT EXISTS verdicts_digest ON verdicts(digest);
 
     CREATE TABLE IF NOT EXISTS approvals (
       plan_id       INTEGER PRIMARY KEY REFERENCES plans(id),  -- one decision per plan, final
@@ -145,4 +148,20 @@ function migrate(db: Db): void {
     CREATE TRIGGER IF NOT EXISTS audit_log_no_delete BEFORE DELETE ON audit_log
       BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
   `);
+}
+
+/** Older databases declared verdicts.digest UNIQUE, which made a second assessment of an unchanged event fail. */
+function dropVerdictDigestUnique(db: Db): void {
+  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'verdicts'").get() as { sql: string } | undefined;
+  if (!row || !/digest\s+TEXT NOT NULL UNIQUE/.test(row.sql)) return;
+  db.pragma('foreign_keys = OFF');
+  db.transaction(() => {
+    db.exec(`ALTER TABLE verdicts RENAME TO verdicts_old;
+      CREATE TABLE verdicts (
+        plan_id INTEGER PRIMARY KEY REFERENCES plans(id), digest TEXT NOT NULL, overall TEXT NOT NULL,
+        verdict_json TEXT NOT NULL, created_ms INTEGER NOT NULL);
+      INSERT INTO verdicts SELECT plan_id, digest, overall, verdict_json, created_ms FROM verdicts_old;
+      DROP TABLE verdicts_old;`);
+  })();
+  db.pragma('foreign_keys = ON');
 }

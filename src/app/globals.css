@@ -8,7 +8,8 @@
   --color-ground: #e5e9e7;
   --color-panel: #ffffff;
   --color-raised: #f1f4f2;
-  --color-line: #b9c1bd;
+  /* 3:1+ against white and ground for input and button borders (WCAG non-text contrast). */
+  --color-line: #8a9490;
   --color-line-soft: #d8dedb;
   --color-ink: #000000;
   --color-ink-muted: #3f4744;
@@ -17,11 +18,13 @@
   --color-allow: #0b6e4f;
   --color-allow-dark: #08583f;
   --color-allow-wash: #dcefe7;
+  --color-allow-ink: #064a35;
   --color-hold: #7a5100;
   --color-hold-fill: #ffc72c;
   --color-hold-wash: #fff4d1;
   --color-block: #c8102e;
   --color-block-wash: #fbe3e6;
+  --color-block-ink: #7d0a1c;
   --color-route: #0b4a8f;
 
   --color-band-a: #e35205;

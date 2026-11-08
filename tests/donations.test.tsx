@@ -153,7 +153,8 @@ describe('donation service', () => {
   it('a cancelled donation cannot be captured later', async () => {
     const { svc } = setup();
     const d = await svc.create({ amount_usd: 5, donor_ref: 'erin' }, 'human');
-    svc.cancel(d.receiptId);
+    expect(svc.cancel(d.receiptId, 'WRONG-ORDER')).toBe(false);
+    expect(svc.cancel(d.receiptId, d.orderId)).toBe(true);
     await expect(svc.capture(d.receiptId)).rejects.toMatchObject({ code: 'NOT_CAPTURABLE' });
   });
 

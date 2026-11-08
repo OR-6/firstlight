@@ -4,7 +4,7 @@ import { AgGridReact } from 'ag-grid-react';
 import Link from 'next/link';
 import { useState } from 'react';
 import type { BatchView } from '@/server/views';
-import { Notice, StatusChip, itemStatus, usd, when } from '@/ui/format';
+import { Notice, StatusChip, itemStatus, usd, when, LoadError, Loading } from '@/ui/format';
 import { ApiError, call, useApi, useLive } from '@/ui/live';
 import { gridTheme } from '@/ui/PlanGrid';
 
@@ -89,7 +89,7 @@ function Batch({ b }: { b: BatchView }) {
 }
 
 export default function PayoutsPage() {
-  const { data } = useApi<{ batches: BatchView[] }>('/api/batches');
+  const { data, error, reload } = useApi<{ batches: BatchView[] }>('/api/batches');
   const batches = data?.batches ?? [];
   return (
     <div className="space-y-5">
@@ -99,6 +99,8 @@ export default function PayoutsPage() {
           Every batch sent to PayPal Payouts in the sandbox. Statuses update live from PayPal webhooks, and from polling every 2 s when no webhook can reach this server.
         </p>
       </div>
+      <LoadError error={error} onRetry={reload} />
+      {!data && !error ? <Loading what="payouts" /> : null}
       {data && batches.length === 0 ? <p className="panel p-5 text-ink-muted">No payouts sent yet. Approve a plan and send it from its page.</p> : null}
       {batches.map((b) => (
         <Batch key={b.id} b={b} />

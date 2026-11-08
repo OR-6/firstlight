@@ -72,7 +72,7 @@ function build(): Runtime {
     audit: pipeline.audit,
     ledger: pipeline.ledger,
     orders: () => (orders ??= new PayPalOrders()),
-    baseUrl: () => process.env.APP_BASE_URL?.trim() || 'http://localhost:3000',
+    baseUrl: () => publicBaseUrl() ?? 'http://localhost:3000',
   });
   return {
     donations,
@@ -87,6 +87,12 @@ function build(): Runtime {
     paypal: () => (paypal ??= new PayPalClient(loadPayPalConfig())),
     payees: () => (payees ??= loadPayees(process.env, new Set(registry.map((r) => r.recipientId)))),
   };
+}
+
+/** APP_BASE_URL, else the URL Render injects, else nothing. */
+export function publicBaseUrl(): string | null {
+  const v = process.env.APP_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
+  return v ? v.replace(/\/$/, '') : null;
 }
 
 export function firstlight(): Runtime {
@@ -127,6 +133,36 @@ export async function exclusive<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 const executions: number[] = [];
+
+/** Give back a slot when the request was refused before anything reached PayPal. */
+export function refundExecutionSlot(): void {
+  executions.pop();
+}
+
+let inflight = 0;
+let lastReset = 0;
+
+/** Track work that awaits PayPal, so a demo reset can't close the database under it. */
+export async function tracked<T>(fn: () => Promise<T>): Promise<T> {
+  inflight++;
+  try {
+    return await fn();
+  } finally {
+    inflight--;
+  }
+}
+
+/** Why a reset must wait, or null if it may go ahead. */
+export function resetBlocker(now = Date.now()): string | null {
+  if (inflight > 0 || assessing) return 'Something is still running (an assessment, payout or donation). Try again in a few seconds.';
+  const cooldown = Number(process.env.RESET_COOLDOWN_MS ?? 60_000);
+  if (now - lastReset < cooldown) return 'The demo was reset less than a minute ago. Try again shortly.';
+  return null;
+}
+
+export function markReset(now = Date.now()): void {
+  lastReset = now;
+}
 
 /**
  * Public-demo guard: real sandbox payout batches per rolling hour, across all

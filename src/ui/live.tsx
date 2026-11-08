@@ -21,7 +21,11 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     let retry: ReturnType<typeof setTimeout> | undefined;
     const open = () => {
       es = new EventSource('/api/stream');
-      es.onopen = () => setConnected(true);
+      es.onopen = () => {
+        setConnected(true);
+        // Refetch everything on (re)connect: covers a cold start where the first fetch failed.
+        bump();
+      };
       es.onmessage = (m) => {
         try {
           const ev = JSON.parse(m.data) as { kind: string; entry?: { type: string; hash: string } };
@@ -76,6 +80,7 @@ export function useApi<T>(url: string | null) {
   const { version } = useLive();
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [loading, setLoading] = useState(Boolean(url));
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -84,6 +89,7 @@ export function useApi<T>(url: string | null) {
       // The thing we were showing no longer exists (e.g. after a demo reset).
       setData(null);
       setError(null);
+      setLoading(false);
       return;
     }
     try {
@@ -93,7 +99,9 @@ export function useApi<T>(url: string | null) {
         setError(null);
       }
     } catch (e) {
-      if (mine === seq.current) setError(e as ApiError);
+      if (mine === seq.current) setError(e instanceof ApiError ? e : new ApiError(0, 'NETWORK', "Couldn't reach the server. It may be waking up; this usually takes under a minute."));
+    } finally {
+      if (mine === seq.current) setLoading(false);
     }
   }, [url]);
 
@@ -101,5 +109,5 @@ export function useApi<T>(url: string | null) {
     void load();
   }, [load, version]);
 
-  return { data, error, reload: load };
+  return { data, error, loading, reload: load };
 }

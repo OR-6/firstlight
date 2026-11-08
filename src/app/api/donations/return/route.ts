@@ -1,4 +1,6 @@
-import { firstlight } from '@/server/runtime';
+import { baseUrl } from '@/server/http';
+import { DonationError } from '@/donations/service';
+import { firstlight, tracked } from '@/server/runtime';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -7,16 +9,18 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const receipt = url.searchParams.get('receipt') ?? '';
   const token = url.searchParams.get('token') ?? undefined;
-  const to = new URL('/donate', url);
-  to.searchParams.set('receipt', receipt);
+  // Redirect to the PUBLIC origin; req.url is the proxy's internal address on Render.
+  const to = new URL('/donate', baseUrl(req));
   if (!/^rcpt_[0-9a-f]{16}$/.test(receipt)) {
-    to.searchParams.set('error', 'unknown');
+    to.searchParams.set('error', 'UNKNOWN_RECEIPT');
     return Response.redirect(to, 303);
   }
+  to.searchParams.set('receipt', receipt);
   try {
-    await firstlight().donations.capture(receipt, token);
+    await tracked(() => firstlight().donations.capture(receipt, token));
   } catch (e) {
-    to.searchParams.set('error', (e as Error).message.slice(0, 120));
+    // Only a code goes in the URL; the page maps it to fixed text (no attacker-written messages).
+    to.searchParams.set('error', e instanceof DonationError ? e.code : 'CAPTURE_FAILED');
   }
   return Response.redirect(to, 303);
 }

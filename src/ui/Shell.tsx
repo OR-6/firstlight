@@ -14,14 +14,18 @@ const NAV = [
   { href: '/payouts', label: 'Payouts' },
   { href: '/redteam', label: 'Red team' },
   { href: '/audit', label: 'Audit' },
+  { href: '/how-it-works', label: 'How it works' },
   { href: '/donate', label: 'Donate' },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <LiveProvider>
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[2000] focus:rounded-[var(--radius-control)] focus:bg-black focus:px-3 focus:py-2 focus:text-white">
+        Skip to content
+      </a>
       <TopBar />
-      <main className="mx-auto w-full max-w-[1500px] px-4 pb-16 pt-5 md:px-6">{children}</main>
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1500px] px-4 pb-16 pt-5 md:px-6">{children}</main>
     </LiveProvider>
   );
 }
@@ -34,18 +38,6 @@ function Mark() {
       <path d="M1 13.5h24" stroke="#000" strokeWidth="2.4" strokeLinecap="round" />
       <path d="M13 1.2v2.6M5 4.4l1.8 1.8M21 4.4l-1.8 1.8" stroke="#000" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
-  );
-}
-
-/** Yellow warning plate with a black inset border, like a road warning sign. */
-function SandboxBadge({ className = '' }: { className?: string }) {
-  return (
-    <span
-      className={`rounded-[var(--radius-chip)] bg-hold-fill p-[2px] ${className}`}
-      title="Every payment goes to the PayPal sandbox. No real money moves."
-    >
-      <span className="rounded-[3px] border-[1.5px] border-black px-2 py-px text-[0.8rem] font-bold text-black">Sandbox: no real money moves</span>
-    </span>
   );
 }
 
@@ -92,7 +84,6 @@ function TopBar() {
           <Mark />
           <span className="text-[1.2rem] font-[800] tracking-[-0.01em]">Firstlight</span>
         </Link>
-        <SandboxBadge className="hidden sm:inline-flex" />
         <nav className="ml-2 hidden h-full items-stretch gap-1 lg:flex" aria-label="Main">
           <NavLinks path={path} pending={pending} />
         </nav>
@@ -127,9 +118,6 @@ function TopBar() {
           ) : null}
         </nav>
       ) : null}
-      <div className="flex justify-center border-t border-line-soft bg-hold-fill py-1 sm:hidden">
-        <span className="text-[0.8rem] font-bold text-black">Sandbox: no real money moves</span>
-      </div>
     </header>
   );
 }

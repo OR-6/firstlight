@@ -2,17 +2,20 @@
 
 import Link from 'next/link';
 import type { PlanSummary } from '@/server/views';
-import { StatusChip, planStatus, usd, when } from '@/ui/format';
+import { LoadError, Loading, StatusChip, planStatus, usd, when } from '@/ui/format';
 import { useApi } from '@/ui/live';
 
 export default function PlansPage() {
-  const { data } = useApi<{ plans: PlanSummary[] }>('/api/plans');
+  const { data, error, reload } = useApi<{ plans: PlanSummary[] }>('/api/plans');
   const plans = data?.plans ?? [];
   return (
     <div className="space-y-4">
       <h1 className="text-[1.4rem] font-[800]">Plans</h1>
       <p className="max-w-[70ch] text-ink-muted">Every assessment the agent has made, newest first. Each one is a new version for its earthquake; a revision never pays anyone twice.</p>
-      <div className="panel overflow-x-auto">
+      <LoadError error={error} onRetry={reload} />
+      {!data && !error ? <Loading what="plans" /> : null}
+      {data && plans.length === 0 ? <p className="panel p-5 text-ink-muted">No plans yet. Run an assessment from Mission control.</p> : null}
+      <div className={`panel overflow-x-auto ${plans.length ? '' : 'hidden'}`}>
         <table className="w-full min-w-[720px] text-left text-[0.93rem]">
           <thead className="text-[0.85rem] text-ink-muted">
             <tr className="border-b border-line-soft">

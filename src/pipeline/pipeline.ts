@@ -206,7 +206,10 @@ export class Pipeline {
     if (!this.audit.hasVerdict(verdict.digest)) throw new PipelineError('NOT_AUDITED', 'verdict missing from audit log (R11)');
 
     const existing = this.ledger.getBatchByDigest(verdict.digest);
-    if (existing && existing.status !== 'SUBMIT_UNKNOWN') return existing;
+    // RESERVED means we never heard back (crash or throw before PayPal answered); resend
+    // with the stored PayPal-Request-Id, which PayPal de-duplicates.
+    const resend = existing?.status === 'SUBMIT_UNKNOWN' || existing?.status === 'RESERVED';
+    if (existing && !resend) return existing;
 
     let batch = existing;
     if (!batch) {
@@ -218,7 +221,8 @@ export class Pipeline {
         this.context(event, JSON.parse(plan.corroboration_json) as CorroborationReport, JSON.parse(plan.sentinel_json) as SentinelReport, this.clock()),
       );
       const key = (v: Verdict) => payableItems(v).map((i) => `${i.recipientId}:${i.amountCents}`).sort().join(',');
-      if (fresh.overall === 'BLOCK' || key(fresh) !== key(verdict) || fresh.paypalRequestId !== verdict.paypalRequestId) {
+      const nowNeedsApproval = fresh.overall === 'REQUIRE_APPROVAL' && verdict.overall === 'ALLOW';
+      if (fresh.overall === 'BLOCK' || nowNeedsApproval || key(fresh) !== key(verdict) || fresh.paypalRequestId !== verdict.paypalRequestId) {
         this.audit.append('execute.refused', { planId, digest: verdict.digest, reason: 'STATE_CHANGED', freshOverall: fresh.overall, freshDigest: fresh.digest });
         throw new PipelineError('STATE_CHANGED', 'ledger changed since this verdict; reassess the event');
       }
@@ -261,7 +265,8 @@ export class Pipeline {
         request: maskReceivers(body),
       });
     } catch (err) {
-      const definitive = err instanceof PayPalApiError && err.status >= 400 && err.status < 500 && err.status !== 409 && err.status !== 429;
+      // On a resend, the first attempt's outcome is still unknown, so no error is definitive.
+      const definitive = !resend && err instanceof PayPalApiError && err.status >= 400 && err.status < 500 && err.status !== 409 && err.status !== 429;
       if (definitive) {
         for (const i of items) this.ledger.setItemStatus(plan.event_id, i.recipientId, 'FAILED');
         this.ledger.setBatchStatus(batch.id, 'FAILED');
@@ -297,8 +302,10 @@ export class Pipeline {
       if (current.get(recipientId) !== norm.status) changes.push({ recipientId, from: current.get(recipientId)!, to: norm.status, unknown: norm.unknown });
     }
     const status = body.batch_header.batch_status;
-    if (status !== batch.status) this.ledger.setBatchStatus(batchId, status);
-    if (changes.length > 0 || status !== batch.status) {
+    // Re-read after the await: the poller and webhooks can poll the same batch concurrently.
+    const before = this.ledger.getBatch(batchId)!.status;
+    if (status !== before) this.ledger.setBatchStatus(batchId, status);
+    if (changes.length > 0 || status !== before) {
       this.audit.append('paypal.payout.status', { batchId, paypalBatchId: batch.paypal_batch_id, batchStatus: status, changes });
     }
     const items = this.ledger.batchItems(batchId).map((r) => ({ recipientId: r.recipient_id, status: r.status }));

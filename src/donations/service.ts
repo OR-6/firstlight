@@ -45,6 +45,8 @@ export class DonationError extends Error {
 export type CreatedDonation = { receiptId: string; orderId: string; approvalUrl: string; amountUsd: string; status: string; replayed: boolean };
 
 export class DonationService {
+  /** Refused donation attempts by rule code, since the server started. */
+  readonly rejected: Record<string, number> = {};
   constructor(
     private readonly deps: {
       db: Db;
@@ -89,12 +91,22 @@ export class DonationService {
       const existing = this.deps.db
         .prepare('SELECT * FROM donations WHERE donor_ref = ? AND idempotency_key = ?')
         .get(pre.donor_ref.trim(), pre.idempotency_key) as DonationRow | undefined;
-      if (existing?.order_id) return this.toCreated(existing, true);
+      if (existing) {
+        const asked = Math.round(Number((raw as { amount_usd?: unknown }).amount_usd) * 100);
+        if (Number.isFinite(asked) && asked !== existing.amount_cents) {
+          throw new DonationError('IDEMPOTENCY_MISMATCH', 'That idempotency_key was already used for a different amount. Use a new key.', 409);
+        }
+        if (existing.order_id && existing.status !== 'FAILED') return this.toCreated(existing, true);
+        if (existing.status === 'CREATING') throw new DonationError('IN_PROGRESS', 'This donation is still being created. Try again in a moment.', 409);
+        // FAILED before PayPal gave us an order: clear it so the retry can go through.
+        if (existing.status === 'FAILED') this.deps.db.prepare("DELETE FROM donations WHERE receipt_id = ? AND status = 'FAILED'").run(existing.receipt_id);
+      }
     }
 
     const decision = evaluateDonation(raw, { now: this.now(), recent: this.recent(), config: this.deps.policy });
     if (!decision.ok) {
-      this.deps.audit.append('donation.rejected', { source, code: decision.code });
+      // Counted, not chained: anyone can send invalid bodies, and they must not bury the real story in the audit log.
+      this.rejected[decision.code] = (this.rejected[decision.code] ?? 0) + 1;
       throw new DonationError(decision.code, decision.message, decision.code.endsWith('RATE_LIMIT') || decision.code === 'CARD_TESTING_PATTERN' ? 429 : 400);
     }
 
@@ -187,9 +199,13 @@ export class DonationService {
     return this.get(receiptId)!;
   }
 
-  cancel(receiptId: string): void {
-    const res = this.deps.db.prepare("UPDATE donations SET status = 'CANCELED' WHERE receipt_id = ? AND status = 'AWAITING_APPROVAL'").run(receiptId);
+  /** Cancel a pending donation. Needs the PayPal order id (PayPal's `token` on the cancel URL). */
+  cancel(receiptId: string, orderId: string): boolean {
+    const res = this.deps.db
+      .prepare("UPDATE donations SET status = 'CANCELED' WHERE receipt_id = ? AND order_id = ? AND status = 'AWAITING_APPROVAL'")
+      .run(receiptId, orderId);
     if (res.changes) this.deps.audit.append('donation.canceled', { receiptId });
+    return res.changes > 0;
   }
 
   private toCreated(d: DonationRow, replayed: boolean): CreatedDonation {

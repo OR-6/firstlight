@@ -1,12 +1,12 @@
 # Firstlight
 
-**Disaster-relief cash, sent by an AI agent that can't be talked into paying the wrong person.**
+**Earthquake relief cash in minutes, no application needed, sent by an AI agent that can't be talked into paying the wrong person.**
 
 > **SANDBOX ONLY: no real money moves.** Every payment goes through the PayPal sandbox. All recipients are synthetic test accounts.
 
-After a major earthquake, people need cash first and it arrives last. Firstlight lets an AI agent read the earthquake data, decide whether relief should go out, choose who gets which tier and write to each person in their language. Then a deterministic **payment firewall** checks the plan, computes every amount itself, sends anything unusual to a human, and only then does PayPal Payouts send money. Donors, both people and other AI agents, fund the pool through PayPal Checkout. Built for the PayPal AI Hackathon.
+After a major earthquake, people need cash first and it arrives last. Firstlight is for aid organisations that run cash programmes: households are enrolled through field partners *before* a disaster, so when a strong quake is confirmed near them nobody has to apply. An AI agent (Claude) reads the earthquake data, decides whether relief should go out, chooses who gets which tier and writes to each person in their language. Then a deterministic **payment firewall** checks the plan, computes every amount itself, sends anything unusual to a human, and only then does PayPal Payouts send money. Donors, both people and other AI agents, fund the pool through PayPal Checkout. Built for the PayPal AI Hackathon.
 
-- **Try it:** https://firstlight.onrender.com (replay mode, no keys needed; PayPal sandbox)
+- **Try it:** https://firstlight.onrender.com (replay mode, no keys needed; PayPal sandbox). Start with [How it works](https://firstlight.onrender.com/how-it-works): who uses which screen, how people are enrolled, how people and agents donate.
 - **Video:** _added after recording_
 - Spec: [SPEC.md](SPEC.md) · decisions: [docs/decisions.md](docs/decisions.md) · design: [DESIGN.md](DESIGN.md) · [docs/SECURITY.md](docs/SECURITY.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
@@ -45,13 +45,14 @@ A sentinel (pattern checks plus a Claude Haiku classifier) scans untrusted text 
 
 With the real agent (Claude Opus 5.5, recorded run) and four poisoned news items, the agent submitted only the legitimate plan and named all four attacks for the reviewer.
 
-**Tests:** 336 (`npm test`), including table-driven firewall cases for every rule boundary, a 3,000-plan compromised-agent fuzz test, an end-to-end compromised-agent test asserting what PayPal was actually asked to pay, audit tamper detection, webhook signature failures, and donor-side injection, XSS and replay cases.
+**Tests:** 350 (`npm test`), including table-driven firewall cases for every rule boundary, a 3,000-plan compromised-agent fuzz test, an end-to-end compromised-agent test asserting what PayPal was actually asked to pay, audit tamper detection, webhook signature failures, and donor-side injection, XSS and replay cases.
 
 ## What's real
 
 - **Earthquake:** USGS `us6000u18k`, M7.7 Panama, 2026-10-09, PAGER orange, confirmed by EMSC. Copies of the real USGS and EMSC responses are in `fixtures/events/`.
 - **Agent:** Claude Opus 5.5 with tool use. Replay mode serves recorded responses keyed by a hash of the full request; `npm run record:fixtures` records new ones.
-- **PayPal (sandbox):** Payouts (real batches, idempotent), Orders v2 for donations (PayPal Server SDK, built with the APIMatic Context Plugin), verified webhooks, and polling as a fallback.
+- **PayPal (sandbox):** Payouts (real batches, idempotent), Orders v2 for donations (PayPal Server SDK, built with the APIMatic Context Plugin), verified webhooks, and polling as a fallback. Payouts use the REST API directly because neither the Server SDK nor PayPal's Agent Toolkit has a Payouts call.
+- **Earthquake feed:** the hosted demo replays one real recorded quake so every run is reproducible. `npm run fetch:usgs` reads the live USGS feed; feeding it into the event store is the next step.
 
 ## Quickstart
 
@@ -81,7 +82,7 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 
 | Variable | Purpose |
 |---|---|
-| `PAYPAL_ENV` | Must be `sandbox`; anything else refuses to start |
+| `PAYPAL_ENV` | Must be `sandbox`; anything else disables every PayPal call |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` | Sandbox app credentials (read only by `src/paypal`) |
 | `PAYPAL_WEBHOOK_ID` | From `npm run webhook:register`; webhooks are refused without it |
 | `APP_BASE_URL` | Public URL (PayPal return links, manifest) |
@@ -91,6 +92,10 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 | `TIER_A_USD`, `TIER_B_USD`, `TIER_C_USD`, `PER_RECIPIENT_CAP_USD`, `EVENT_CAP_USD`, `APPROVAL_THRESHOLD_USD` | Firewall policy |
 | `EXECUTE_LIMIT_PER_HOUR` | Public-demo cap on real sandbox payout batches |
 | `FIRSTLIGHT_DB` | SQLite path (default `data/firstlight.db`) |
+| `FIREWALL_KILL_SWITCH` | `1` blocks every payout (R7) |
+| `RESET_COOLDOWN_MS` | Minimum gap between demo resets (default 60 s) |
+| `PAYPAL_SMOKE_RECEIVER` | Sandbox personal account for `npm run smoke:payout` |
+| `FIRSTLIGHT_URL`, `SAMARITAN_ALLOWANCE_USD` | Where `npm run samaritan` points (e.g. the hosted demo) and its allowance |
 
 ## For other agents
 
@@ -98,9 +103,19 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 - MCP (Streamable HTTP): `/mcp` with `get_pool_status`, `list_active_events`, `create_donation`, `get_receipt`
 - A donor agent can only create a PayPal order. **A person approves it on PayPal**; nothing is charged otherwise. Receipts carry audit-log hashes the donor can verify at `/api/audit/verify?upTo=<hash>`.
 
+## For judges
+
+| Criterion | Where to look |
+|---|---|
+| Technological implementation | PayPal Payouts + Orders v2 + verified webhooks (`src/paypal/`); Claude agent with strict tool schemas (`src/agent/`); pure firewall R1–R10 (`src/firewall/`); hash-chained audit (`src/ledger/audit.ts`); 350 tests |
+| Design | Mission control → Plans → Approvals → Payouts on the live demo; road-sign design system in [DESIGN.md](DESIGN.md) |
+| Potential impact | Relief cash for pre-enrolled households minutes after a quake, no application: [How it works](https://firstlight.onrender.com/how-it-works) |
+| Innovation | Capability restriction instead of detection; 27-attack red-team console anyone can run; AI agents donating over MCP with receipts they can verify |
+| Presentation | Video (link above) and this README |
+
 ## Judge access
 
-The hosted demo runs in replay mode with sandbox credentials held server-side. Use "Reset demo" on Mission control to start over. Payout batches are capped per hour. On Render's free tier the first request after idling can take about a minute.
+The hosted demo runs in replay mode with sandbox credentials held server-side. Use "Reset demo" on Mission control to start over (at most once a minute, and not while something is running). Payout batches are capped per hour; refused attempts don't use up the cap. On Render's free tier the first request after idling can take about a minute.
 
 ## Limitations and honest scope
 
@@ -109,6 +124,8 @@ The hosted demo runs in replay mode with sandbox credentials held server-side. U
 - A real deployment would need identity verification, sanctions screening and a licensed disbursement partner.
 - Collecting and redistributing public donations is regulated. A real deployment would route donations through a registered charity or licensed partner. **Do not use this prototype to solicit real money.**
 - The hosted demo's database resets when the server restarts.
+- The console screens are open so judges can try every step. A real deployment puts them behind staff sign-in; donors and recipients never use them.
+- The demo replays one real recorded earthquake instead of watching the live feed.
 
 ## License
 

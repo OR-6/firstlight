@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import type { PlanSummary, PlanView } from '@/server/views';
 import { usd, when } from '@/ui/format';
+import { LoadError, Loading } from '@/ui/format';
 import { useApi } from '@/ui/live';
 import { ApprovalForm } from '@/ui/panels';
 
@@ -20,7 +21,7 @@ function Pending({ id }: { id: number }) {
 }
 
 export default function ApprovalsPage() {
-  const { data } = useApi<{ plans: PlanSummary[] }>('/api/plans');
+  const { data, error, reload } = useApi<{ plans: PlanSummary[] }>('/api/plans');
   const plans = data?.plans ?? [];
   const pending = plans.filter((p) => p.overall === 'REQUIRE_APPROVAL' && !p.approval);
   const decided = plans.filter((p) => p.approval);
@@ -32,6 +33,8 @@ export default function ApprovalsPage() {
           The firewall sends plans here when they are over the auto-approve limit or something looked wrong. Your name and reason are written to the audit log. Approving can never add a recipient or raise an amount; blocked items stay blocked.
         </p>
       </div>
+      <LoadError error={error} onRetry={reload} />
+      {!data && !error ? <Loading what="approvals" /> : null}
       {data && pending.length === 0 ? <p className="panel p-5 text-ink-muted">Nothing is waiting for a decision.</p> : null}
       <div className="space-y-6">
         {pending.map((p) => (
@@ -50,6 +53,11 @@ export default function ApprovalsPage() {
                 <span className={p.approval === 'approve' ? 'text-allow' : 'text-block'}>{p.approval === 'approve' ? 'Approved' : 'Denied'}</span>
                 <span className="num">{usd(p.totalCents)}</span>
                 <span className="num text-ink-muted">{when(p.createdMs)}</span>
+                {p.approval === 'approve' && !p.batchStatus ? (
+                  <Link href={`/plans/${p.id}`} className="btn btn-go ml-auto h-8">
+                    Send payouts
+                  </Link>
+                ) : null}
               </li>
             ))}
           </ul>

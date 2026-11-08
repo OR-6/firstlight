@@ -15,8 +15,6 @@ services:
         value: "22"
       - key: PAYPAL_ENV
         value: sandbox
-      - key: PAYPAL_MODE
-        value: sandbox
       - key: DEMO_MODE
         value: replay # recorded Claude runs; no Anthropic key needed on the server
       # Free instances have no persistent disk: the demo database resets on restart or deploy.

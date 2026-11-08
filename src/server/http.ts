@@ -1,8 +1,10 @@
 import 'server-only';
+import { requestOrigin } from '../lib/origin';
 import { PayPalApiError } from '../paypal/client';
 import { PipelineError } from '../pipeline/pipeline';
 import { LlmFixtureMissingError } from '../llm/replay';
 import { DonationError } from '../donations/service';
+import { ReplayEventNotFound } from '../signals/replay';
 
 /** Consistent JSON responses and error mapping for the API routes. */
 export function json(body: unknown, status = 200): Response {
@@ -37,6 +39,9 @@ const MESSAGE: Record<string, string> = {
 };
 
 export function fail(err: unknown): Response {
+  if (err instanceof ReplayEventNotFound) return json({ error: 'NOT_FOUND', message: 'No earthquake with that id.' }, 404);
+  if (err instanceof RequestError) return json({ error: err.code, message: err.message }, err.status);
+  if (err instanceof SyntaxError) return json({ error: 'INVALID_JSON', message: 'Send a valid JSON body.' }, 400);
   if (err instanceof PipelineError) {
     return json({ error: err.code, message: MESSAGE[err.code] ?? err.message }, STATUS[err.code] ?? 400);
   }
@@ -50,16 +55,58 @@ export function fail(err: unknown): Response {
   return json({ error: 'INTERNAL', message: 'Something went wrong on the server. Check the server log.' }, 500);
 }
 
-export async function readJson<T>(req: Request, max = 10_000): Promise<T> {
-  const text = await req.text();
-  if (text.length > max) throw new PipelineError('APPROVAL_INCOMPLETE', 'request too large');
-  return (text ? JSON.parse(text) : {}) as T;
+export class RequestError extends Error {
+  constructor(
+    readonly code: 'REQUEST_TOO_LARGE' | 'INVALID_JSON' | 'NOT_FOUND',
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
 }
 
-/** Public base URL: APP_BASE_URL when set (behind a proxy), else the request's own origin. */
-export function baseUrl(req: Request): string {
-  return process.env.APP_BASE_URL?.trim() || new URL(req.url).origin;
+/** Read the body as text, refusing more than `maxBytes` without buffering the rest. */
+export async function readText(req: Request, maxBytes: number): Promise<string> {
+  const tooLarge = () => new RequestError('REQUEST_TOO_LARGE', `Request body is over ${maxBytes} bytes.`, 413);
+  if (Number(req.headers.get('content-length') ?? 0) > maxBytes) throw tooLarge();
+  if (!req.body) return '';
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel();
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
+
+export async function readJson<T>(req: Request, max = 10_000): Promise<T> {
+  const text = await readText(req, max);
+  try {
+    return (text ? JSON.parse(text) : {}) as T;
+  } catch {
+    throw new RequestError('INVALID_JSON', 'Send a valid JSON body.', 400);
+  }
+}
+
+/**
+ * Public base URL for links and redirects. Behind a proxy (Render) the
+ * request's own URL is the internal address (http://localhost:10000), so
+ * never build user-facing URLs from req.url alone.
+ * Order: APP_BASE_URL, then the proxy's forwarded host, then Host, then req.url.
+ */
+export function baseUrl(req: Request): string {
+  const configured = process.env.APP_BASE_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim();
+  if (configured) return configured.replace(/\/$/, '');
+  return requestOrigin(req.headers, req.url);
+}
+
 
 export function donationFail(err: unknown): Response {
   if (err instanceof SyntaxError) return json({ error: 'INVALID_JSON', message: 'Send a JSON body.' }, 400);

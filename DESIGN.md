@@ -18,7 +18,7 @@ Not based on a comparison with other sites; derived from the subject. Tokens liv
 | `ink-dim` | `#5E6864` | Tertiary text, hashes (5.9:1 on white) |
 | `allow` | `#0B6E4F` | **Guide-sign green.** Primary buttons, links, "allowed", "paid" (6.4:1 with white) |
 | `allow-wash` | `#DCEFE7` | Success notice background |
-| `hold-fill` | `#FFC72C` | **Warning yellow.** "Needs approval" plates, warning diamonds, sandbox badge. Always with black text |
+| `hold-fill` | `#FFC72C` | **Warning yellow.** "Needs approval" plates, warning diamonds. Always with black text |
 | `hold` | `#7A5100` | Warning-coloured text on white (7.3:1) |
 | `hold-wash` | `#FFF4D1` | Warning notice background |
 | `block` | `#C8102E` | **Regulatory red.** "Blocked", errors, deny (5.9:1 with white) |
@@ -65,7 +65,7 @@ Radius: chips and buttons 4 px (sign plates have rounded corners), panels 6 px, 
 - **Money's path:** a green guide-sign board with a white inset border; stages in white type; marks per the status table.
 - **Inputs:** white, `line` border, explicit `<label for>`.
 - **Navigation:** text links, active page underlined in black; below 768 px a "Menu" button opens the list.
-- **Sandbox badge:** yellow warning plate with a black border, always visible.
+- **Sandbox notice:** no persistent badge (removed at the owner's request, D59). The sandbox is stated where money moves: the Donate page, How it works, PayPal's own sandbox pages, payout emails and the README.
 
 ## Imagery and icons
 

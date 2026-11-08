@@ -20,6 +20,13 @@ export type ReplayBundle = {
   untrusted: UntrustedText[];
 };
 
+export class ReplayEventNotFound extends Error {
+  constructor(readonly eventId: string) {
+    super(`no replay fixture for ${eventId}`);
+    this.name = 'ReplayEventNotFound';
+  }
+}
+
 export function listReplayEvents(dir = 'fixtures/events'): { id: string; title: string }[] {
   const m = ManifestSchema.parse(JSON.parse(readFileSync(join(dir, 'replay.json'), 'utf8')));
   return Object.entries(m).map(([id, v]) => ({ id, title: v.title }));
@@ -27,8 +34,8 @@ export function listReplayEvents(dir = 'fixtures/events'): { id: string; title: 
 
 export function loadReplayEvent(eventId: string, dir = 'fixtures/events'): ReplayBundle {
   const m = ManifestSchema.parse(JSON.parse(readFileSync(join(dir, 'replay.json'), 'utf8')));
-  const entry = m[eventId];
-  if (!entry) throw new Error(`no replay fixture for ${eventId}`);
+  const entry = Object.hasOwn(m, eventId) ? m[eventId] : undefined;
+  if (!entry) throw new ReplayEventNotFound(eventId);
   const detail = JSON.parse(readFileSync(join(/*turbopackIgnore: true*/ dir, entry.usgs), 'utf8')) as unknown;
   const parsed = parseUsgsFeature(detail);
   if (!parsed.ok) throw new Error(`replay fixture ${entry.usgs}: ${parsed.error}`);

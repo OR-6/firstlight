@@ -25,8 +25,10 @@ export async function handlePayPalWebhook(input: {
   onCaptureCompleted?: (orderId: string | undefined, captureId: string, amountCents: number | null) => unknown;
 }): Promise<WebhookOutcome> {
   const { pipeline, db } = input;
+  // Only deliveries PayPal itself checked and refused go in the audit log. Malformed or
+  // unsigned requests are refused without a write, so they can't flood the chain.
   const reject = (status: number, reason: string, extra: Record<string, unknown> = {}): WebhookOutcome => {
-    pipeline.audit.append('paypal.webhook.rejected', { reason, transmissionId: input.headers.get('paypal-transmission-id'), ...extra });
+    if (reason === 'SIGNATURE_INVALID') pipeline.audit.append('paypal.webhook.rejected', { reason, transmissionId: input.headers.get('paypal-transmission-id'), ...extra });
     return { status, body: { error: reason } };
   };
 
@@ -57,22 +59,27 @@ export async function handlePayPalWebhook(input: {
   if (inserted.changes === 0) return { status: 200, body: { ok: true, duplicate: true } };
 
   pipeline.audit.append('paypal.webhook', { eventId: event.id, eventType: event.event_type, payoutBatchId: payoutBatchIdOf(event) });
-
-  const paypalBatchId = payoutBatchIdOf(event);
-  if (paypalBatchId) {
-    const row = db.prepare('SELECT id FROM payout_batches WHERE paypal_batch_id = ?').get(paypalBatchId) as { id: number } | undefined;
-    if (row) {
-      const s = await pipeline.poll(row.id, input.paypal);
-      return { status: 200, body: { ok: true, batchStatus: s.batch.status } };
+  try {
+    const paypalBatchId = payoutBatchIdOf(event);
+    if (paypalBatchId) {
+      const row = db.prepare('SELECT id FROM payout_batches WHERE paypal_batch_id = ?').get(paypalBatchId) as { id: number } | undefined;
+      if (row) {
+        const s = await pipeline.poll(row.id, input.paypal);
+        return { status: 200, body: { ok: true, batchStatus: s.batch.status } };
+      }
+      return { status: 200, body: { ok: true, ignored: 'unknown batch' } };
     }
-    return { status: 200, body: { ok: true, ignored: 'unknown batch' } };
-  }
-  if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED' && input.onCaptureCompleted) {
-    const r = (event.resource ?? {}) as { id?: string; amount?: { value?: string }; supplementary_data?: { related_ids?: { order_id?: string } } };
-    if (r.id) {
-      const cents = r.amount?.value ? Math.round(Number(r.amount.value) * 100) : null;
-      input.onCaptureCompleted(r.supplementary_data?.related_ids?.order_id, r.id, Number.isFinite(cents) ? cents : null);
+    if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED' && input.onCaptureCompleted) {
+      const r = (event.resource ?? {}) as { id?: string; amount?: { value?: string }; supplementary_data?: { related_ids?: { order_id?: string } } };
+      if (r.id) {
+        const cents = r.amount?.value ? Math.round(Number(r.amount.value) * 100) : null;
+        await input.onCaptureCompleted(r.supplementary_data?.related_ids?.order_id, r.id, Number.isFinite(cents) ? cents : null);
+      }
     }
+    return { status: 200, body: { ok: true } };
+  } catch (err) {
+    // Forget the delivery so PayPal's retry is processed instead of answered as a duplicate.
+    db.prepare('DELETE FROM webhook_events WHERE id = ?').run(event.id);
+    throw err;
   }
-  return { status: 200, body: { ok: true } };
 }

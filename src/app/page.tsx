@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useCallback, useState } from 'react';
 import type { EventView, PlanView, StateView } from '@/server/views';
@@ -53,13 +54,22 @@ export default function MissionControl() {
 
   return (
     <div className="space-y-5">
+      <div>
+        <h1 className="text-[1.5rem] font-[800]">Mission control</h1>
+        <p className="mt-1 max-w-[78ch] text-ink-muted">
+          A real M7.7 earthquake hit Panama on 9 October 2026. Run the assessment to watch the agent draft relief payouts for the households enrolled near it, and the firewall decide what can be paid.{' '}
+          <Link href="/how-it-works" className="font-semibold text-allow underline-offset-2 hover:underline">
+            How it works
+          </Link>
+        </p>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <button className="btn btn-go" onClick={assess} disabled={running || !eventId}>
           {running ? 'Assessing…' : plan ? 'Run a new assessment' : 'Run assessment'}
         </button>
         <label className="flex items-center gap-2 text-[0.9rem] text-ink-muted">
           <input type="checkbox" checked={poison} onChange={(e) => setPoison(e.target.checked)} className="h-4 w-4 accent-[var(--color-allow)]" />
-          Add four poisoned news items
+          Also feed it four fake news items that try to redirect the money (red-team test)
         </label>
         <span className="text-[0.85rem] text-ink-dim">
           {state?.llmMode === 'replay' ? 'Replays the recorded Claude Opus 5.5 run for this real earthquake.' : 'Calls Claude live.'}
@@ -73,7 +83,7 @@ export default function MissionControl() {
 
       <div className="grid gap-5 lg:grid-cols-12">
         <div className="space-y-5 lg:col-span-5">
-          {event ? <EventPanel event={event} /> : <div className="panel h-48" />}
+          {event ? <EventPanel event={event} /> : <div className="panel h-48" aria-busy="true" />}
           {plan ? (
             <AgentPanel plan={plan} />
           ) : (
@@ -128,20 +138,36 @@ function MapLegend() {
 function ResetDemo() {
   const { bump } = useLive();
   const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="ml-auto flex items-center gap-2">
+    <div className="ml-auto flex flex-wrap items-center gap-2">
+      {err ? (
+        <span role="alert" className="text-[0.85rem] text-block-ink">
+          {err}
+        </span>
+      ) : null}
       {armed ? (
         <>
-          <span className="text-[0.85rem] text-ink-muted">Clears plans, ledger and audit log.</span>
+          <span className="text-[0.85rem] text-ink-muted">Clears plans, ledger and audit log for everyone using the demo.</span>
           <button
             className="btn btn-stop h-8"
+            disabled={busy}
             onClick={async () => {
-              await call('/api/demo/reset', { body: {} });
-              setArmed(false);
-              bump();
+              setBusy(true);
+              setErr(null);
+              try {
+                await call('/api/demo/reset', { body: {} });
+                setArmed(false);
+                bump();
+              } catch (e) {
+                setErr((e as ApiError).message);
+              } finally {
+                setBusy(false);
+              }
             }}
           >
-            Reset demo
+            {busy ? 'Resetting…' : 'Reset demo'}
           </button>
           <button className="btn h-8" onClick={() => setArmed(false)}>
             Keep data

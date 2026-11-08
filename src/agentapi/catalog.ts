@@ -30,8 +30,11 @@ export function activeEvents(db: Db): ActiveEvent[] {
     const paid = db
       .prepare("SELECT COALESCE(SUM(amount_cents),0) AS c, COUNT(*) AS n FROM payout_items WHERE event_id = ? AND status = 'SUCCESS'")
       .get(e.id) as { c: number; n: number };
+    // Any batch for the event counts: a later re-assessment that R6 blocks doesn't undo a payout.
+    const anyBatch = db.prepare('SELECT status FROM payout_batches WHERE event_id = ? ORDER BY id DESC LIMIT 1').get(e.id) as { status: string } | undefined;
     let status: ActiveEvent['status'] = 'awaiting_assessment';
-    if (latest) {
+    if (anyBatch && !latest?.batch_status) status = anyBatch.status === 'SUCCESS' ? 'paid' : 'paying';
+    else if (latest) {
       if (latest.batch_status === 'SUCCESS') status = 'paid';
       else if (latest.batch_status) status = 'paying';
       else if (latest.overall === 'BLOCK' || latest.decision === 'deny') status = 'blocked';

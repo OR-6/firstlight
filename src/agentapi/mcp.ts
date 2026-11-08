@@ -70,11 +70,16 @@ export function buildMcpServer(deps: { db: Db; donations: DonationService }): Mc
     {
       title: 'Get a receipt',
       description: 'Donation status plus audit-log references you can verify, and a summary of payouts so far.',
-      inputSchema: { receiptId: z.string().regex(/^rcpt_[0-9a-f]{16}$/).describe('The receiptId returned by create_donation.') },
+      inputSchema: {
+        receipt_id: z.string().regex(/^rcpt_[0-9a-f]{16}$/).optional().describe('The receiptId returned by create_donation.'),
+        receiptId: z.string().regex(/^rcpt_[0-9a-f]{16}$/).optional().describe('Same as receipt_id (either spelling works).'),
+      },
       annotations: { readOnlyHint: true },
     },
-    async ({ receiptId }) => {
-      const r = deps.donations.receipt(receiptId);
+    async ({ receipt_id, receiptId }) => {
+      const id = receipt_id ?? receiptId;
+      if (!id) return fail('Pass receipt_id (the receiptId returned by create_donation).');
+      const r = deps.donations.receipt(id);
       return r ? json(r) : fail('No donation with that receipt.');
     },
   );

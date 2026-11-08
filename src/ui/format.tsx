@@ -14,7 +14,7 @@ export function when(ms: number): string {
 
 const VERDICT: Record<string, { label: string; cls: string }> = {
   ALLOW: { label: 'Allowed', cls: 'text-white bg-allow border-allow' },
-  REQUIRE_APPROVAL: { label: 'Needs approval', cls: 'text-black bg-hold-fill border-[#c99700]' },
+  REQUIRE_APPROVAL: { label: 'Needs approval', cls: 'text-black bg-hold-fill border-band-b' },
   BLOCK: { label: 'Blocked', cls: 'text-white bg-block border-block' },
 };
 
@@ -34,10 +34,11 @@ export function VerdictChip({ v, size = 'md' }: { v: VerdictKind | string | null
 export type Tone = 'allow' | 'hold' | 'block' | 'muted';
 const TONE: Record<Tone, string> = {
   allow: 'text-white bg-allow border-allow',
-  hold: 'text-black bg-hold-fill border-[#c99700]',
+  hold: 'text-black bg-hold-fill border-band-b',
   block: 'text-white bg-block border-block',
   muted: 'text-ink-muted bg-panel border-line',
 };
+/** Hex values for Leaflet, which can't read CSS variables. Mirrors the tokens in globals.css. */
 export const TONE_HEX: Record<Tone, string> = { allow: '#0b6e4f', hold: '#ffc72c', block: '#c8102e', muted: '#8e9692' };
 
 export function StatusChip({ label, tone, size = 'md' }: { label: string; tone: Tone; size?: 'md' | 'lg' }) {
@@ -78,7 +79,7 @@ export function itemStatus(p: PlanLike, recipientId: string, verdict: string): {
   if (paid) {
     if (paid.status === 'SUCCESS') return { label: 'Paid', tone: 'allow' };
     if (['FAILED', 'RETURNED', 'BLOCKED', 'REFUNDED', 'REVERSED', 'DENIED', 'CANCELED'].includes(paid.status))
-      return { label: paid.status.charAt(0) + paid.status.slice(1).toLowerCase(), tone: 'block' };
+      return { label: paid.status === 'CANCELED' ? 'Cancelled' : paid.status.charAt(0) + paid.status.slice(1).toLowerCase(), tone: 'block' };
     if (paid.status === 'UNCLAIMED') return { label: 'Unclaimed', tone: 'hold' };
     return { label: 'Sending', tone: 'hold' };
   }
@@ -116,10 +117,33 @@ export const PAGER: Record<string, string> = { green: '#00a651', yellow: '#ffe80
 
 export function Notice({ tone = 'info', children }: { tone?: 'info' | 'error' | 'ok'; children: React.ReactNode }) {
   const cls =
-    tone === 'error' ? 'border-block bg-block-wash text-[#7d0a1c]' : tone === 'ok' ? 'border-allow bg-allow-wash text-[#064a35]' : 'border-line bg-raised text-ink-muted';
+    tone === 'error' ? 'border-block bg-block-wash text-block-ink' : tone === 'ok' ? 'border-allow bg-allow-wash text-allow-ink' : 'border-line bg-raised text-ink-muted';
   return (
     <div role={tone === 'error' ? 'alert' : 'status'} className={`rounded-[var(--radius-control)] border px-3 py-2 text-[0.9rem] ${cls}`}>
       {children}
     </div>
+  );
+}
+
+/** Shown when a request fails: what happened, and a way to retry. */
+export function LoadError({ error, onRetry }: { error: { message: string } | null; onRetry?: () => void }) {
+  if (!error) return null;
+  return (
+    <div role="alert" className="flex flex-wrap items-center gap-3 rounded-[var(--radius-control)] border border-block bg-block-wash px-3 py-2 text-[0.92rem] text-block-ink">
+      <span className="min-w-0 flex-1">{error.message}</span>
+      {onRetry ? (
+        <button type="button" className="btn h-8" onClick={onRetry}>
+          Try again
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export function Loading({ what }: { what: string }) {
+  return (
+    <p className="text-[0.92rem] text-ink-muted" role="status">
+      Loading {what}…
+    </p>
   );
 }

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useId, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { DonationFeed, type FeedItem } from '@/ui/DonationFeed';
 import { Notice, usd } from '@/ui/format';
-import { ApiError, call, useApi } from '@/ui/live';
+import { ApiError, call, useApi, useLive } from '@/ui/live';
 
 type Pool = { balanceUsd: string; totalDisbursedUsd: string; recipientsReached: number; donationsReceivedUsd: string; donationsCount: number };
 type Receipt = {
@@ -19,6 +19,17 @@ type Receipt = {
 };
 
 const PRESETS = [5, 10, 25, 50];
+const RECEIPT_ID = /^rcpt_[0-9a-f]{16}$/;
+
+/** Fixed text for each error code the return route can send. Never show text from the URL itself. */
+const RETURN_ERRORS: Record<string, string> = {
+  UNKNOWN_RECEIPT: "That link doesn't match a donation.",
+  NOT_FOUND: "That link doesn't match a donation.",
+  NOT_CAPTURABLE: 'This donation was cancelled or already finished, so it was not charged again.',
+  ORDER_MISMATCH: "PayPal sent back a different order than this receipt, so nothing was charged.",
+  PAYPAL: "PayPal didn't complete the payment. Nothing was charged. Try donating again.",
+  CAPTURE_FAILED: "PayPal didn't complete the payment. Nothing was charged. Try donating again.",
+};
 
 async function verifyReceipt(receiptId: string): Promise<string> {
   const r = await call<Receipt>(`/api/receipts/${receiptId}`);
@@ -38,7 +49,9 @@ export default function DonatePage() {
 
 function Donate() {
   const params = useSearchParams();
-  const receiptId = params.get('receipt');
+  const rawReceipt = params.get('receipt');
+  const receiptId = rawReceipt && RECEIPT_ID.test(rawReceipt) ? rawReceipt : null;
+  const errorCode = params.get('error');
   const { data: pool } = useApi<Pool>('/api/pool');
   const { data: feed } = useApi<{ donations: FeedItem[] }>('/api/donations');
   const cents = (s: string | undefined) => Math.round(Number(s ?? 0) * 100);
@@ -57,7 +70,9 @@ function Donate() {
         </p>
       </div>
 
-      {receiptId ? <ReceiptPanel receiptId={receiptId} canceled={params.get('canceled') === '1'} error={params.get('error')} /> : null}
+      {errorCode && !receiptId ? <Notice tone="error">{RETURN_ERRORS[errorCode] ?? RETURN_ERRORS.CAPTURE_FAILED}</Notice> : null}
+      {rawReceipt && !receiptId ? <Notice tone="error">{RETURN_ERRORS.UNKNOWN_RECEIPT}</Notice> : null}
+      {receiptId ? <ReceiptPanel receiptId={receiptId} canceled={params.get('canceled') === '1'} error={errorCode} /> : null}
 
       <div className="grid gap-5 lg:grid-cols-12">
         <section className="panel p-5 lg:col-span-5" aria-labelledby="pool-title">
@@ -192,21 +207,50 @@ function DonateForm() {
   );
 }
 
+const STATUS_TEXT: Record<string, string> = {
+  AWAITING_APPROVAL: 'is waiting for approval on PayPal. Nothing has been charged yet.',
+  CREATING: 'is being set up with PayPal.',
+  CANCELED: 'was cancelled. Nothing was charged.',
+  FAILED: "didn't go through. Nothing was charged.",
+};
+
 function ReceiptPanel({ receiptId, canceled, error }: { receiptId: string; canceled: boolean; error: string | null }) {
   const [r, setR] = useState<Receipt | null>(null);
+  const [missing, setMissing] = useState(false);
   const [check, setCheck] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
+  const { version } = useLive();
   useEffect(() => {
-    call<Receipt>(`/api/receipts/${receiptId}`).then(setR, () => setR(null));
-  }, [receiptId]);
+    // Refetch on live updates too, so a pending receipt turns into a thank-you when the capture lands.
+    call<Receipt>(`/api/receipts/${encodeURIComponent(receiptId)}`).then(
+      (x) => {
+        setR(typeof x?.status === 'string' ? x : null);
+        setMissing(false);
+      },
+      (e: ApiError) => setMissing(e.status === 404),
+    );
+  }, [receiptId, version]);
 
+  const verify = async () => {
+    setChecking(true);
+    try {
+      setCheck(await verifyReceipt(receiptId));
+    } catch (e) {
+      setCheck((e as ApiError).message);
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  if (error) return <Notice tone="error">{RETURN_ERRORS[error] ?? RETURN_ERRORS.CAPTURE_FAILED}</Notice>;
+  if (missing) return <Notice tone="error">{RETURN_ERRORS.UNKNOWN_RECEIPT}</Notice>;
   if (canceled) return <Notice>You cancelled on PayPal. Nothing was charged.</Notice>;
-  if (error) return <Notice tone="error">The donation could not be completed: {error}</Notice>;
   if (!r) return null;
-  if (r.status !== 'CAPTURED') return <Notice>Donation {r.receiptId} is {r.status.toLowerCase().replaceAll('_', ' ')}.</Notice>;
+  if (r.status !== 'CAPTURED') return <Notice>Your donation of ${r.amountUsd} {STATUS_TEXT[r.status] ?? 'is being processed.'}</Notice>;
   return (
     <section className="rounded-[var(--radius-panel)] border-2 border-allow bg-allow-wash p-5" aria-live="polite">
       <h2 className="text-[1.15rem] font-[800] text-allow-dark">Thank you. ${r.amountUsd} reached the relief pool.</h2>
-      <dl className="num mt-2 grid grid-cols-[9rem_1fr] gap-y-1 text-[0.92rem]">
+      <dl className="num mt-2 grid grid-cols-[7.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-[0.92rem] [&_dd]:break-all">
         <dt className="text-ink-muted">Receipt</dt>
         <dd>{r.receiptId}</dd>
         <dt className="text-ink-muted">PayPal capture</dt>
@@ -215,8 +259,8 @@ function ReceiptPanel({ receiptId, canceled, error }: { receiptId: string; cance
         <dd>{r.audit.captured ? `#${r.audit.captured.seq} ${r.audit.captured.hash.slice(0, 16)}…` : 'pending'}</dd>
       </dl>
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button className="btn" onClick={async () => setCheck(await verifyReceipt(r.receiptId))}>
-          Verify my donation
+        <button className="btn" onClick={verify} disabled={checking}>
+          {checking ? 'Checking…' : 'Verify my donation'}
         </button>
         {check ? <span className="text-[0.9rem]">{check}</span> : null}
       </div>

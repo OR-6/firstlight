@@ -8,7 +8,7 @@ import { Shell } from '@/ui/Shell';
 const overpass = Overpass({ subsets: ['latin', 'latin-ext'], variable: '--font-overpass', display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'Firstlight (sandbox)',
+  title: { default: 'Firstlight | Mission control', template: '%s | Firstlight' },
   description: 'Disaster-relief payouts proposed by an AI agent and checked by a payment firewall. PayPal sandbox only; no real money moves.',
 };
 

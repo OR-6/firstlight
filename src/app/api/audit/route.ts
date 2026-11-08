@@ -4,6 +4,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export function GET(req: Request) {
-  const limit = Math.min(1000, Number(new URL(req.url).searchParams.get('limit') ?? 300));
+  const n = Number(new URL(req.url).searchParams.get('limit') ?? 300);
+  const limit = Number.isFinite(n) ? Math.max(1, Math.min(1000, Math.trunc(n))) : 300;
   return json(auditView(limit));
 }
