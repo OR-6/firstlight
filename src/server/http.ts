@@ -26,6 +26,11 @@ const STATUS: Record<string, number> = {
   NO_EVENT: 404,
   NOTHING_OWED: 409,
   NOT_SUBMITTED: 409,
+  PAYPAL_BALANCE_LOW: 409,
+  NO_ITEM: 404,
+  NOT_UNCLAIMED: 409,
+  NO_PAYPAL_ITEM: 409,
+  IN_PROGRESS: 409,
 };
 
 /** User-facing explanations: what happened and what to do. */
@@ -39,6 +44,11 @@ const MESSAGE: Record<string, string> = {
   ALREADY_DECIDED: 'This plan already has a decision.',
   APPROVAL_INCOMPLETE: 'Enter your name and a reason.',
   NOTHING_OWED: 'No enrolled household is owed a payout for this earthquake.',
+  PAYPAL_BALANCE_LOW: "The PayPal sandbox account's available balance is below this batch's total, so nothing was sent. Add sandbox funds and try again.",
+  NO_ITEM: 'No payout item with that id.',
+  NOT_UNCLAIMED: 'Only unclaimed payouts can be cancelled. Check the status with PayPal first.',
+  NO_PAYPAL_ITEM: "PayPal hasn't reported this item's id yet. Check the status now, then try again.",
+  IN_PROGRESS: 'This item is already being cancelled.',
 };
 
 export function fail(err: unknown): Response {
