@@ -120,7 +120,7 @@ Your sandbox app must be linked to a **US** sandbox business account; others can
 | Command | What it does |
 |---|---|
 | `npm test` | All tests |
-| `npm run lint` | ESLint |
+| `npm run lint` | ESLint, fails on any warning |
 | `npm run redteam -- --llm replay` | Attack suite; writes `redteam-report.json` |
 | `npm run fl -- assess` / `approve` / `execute` / `audit` | The loop from the command line |
 | `npm run samaritan` | Scripted donor agent: finds Firstlight via its manifest, donates over MCP within a person's allowance, waits for them to approve on PayPal, recomputes the audit chain itself |

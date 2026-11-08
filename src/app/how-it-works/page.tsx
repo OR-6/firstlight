@@ -156,7 +156,7 @@ export default function HowItWorks() {
             mobile-wallet provider&apos;s rail behind the same firewall, so the same checks decide who is paid and how much. Turning that money into cash nearby, and checking afterwards that people got it, is the field partner&apos;s job.
           </p>
           <p>
-            Every payment arrives with the same fixed message in the household&apos;s language. It says what the money is, that nothing needs to be done, to ask their local relief partner if they have questions, and that nobody from the
+            Every payment arrives with the same fixed message in the household&apos;s language. It says what the money is, that nothing needs to be done, names the field partner who enrolled them with that partner&apos;s help line for questions or if the money doesn&apos;t arrive, and that nobody from the
             programme will ask for a password, code or fee. The agent can&apos;t change it. In English it reads:
           </p>
           <p lang="en" className="rounded-[var(--radius-control)] border border-line-soft bg-panel px-3 py-2 text-[0.95rem]">
@@ -172,7 +172,7 @@ export default function HowItWorks() {
             If the money doesn&apos;t arrive, or something is wrong
           </h2>
           <p>
-            The household contacts the field partner who enrolled them. The payment note tells them to; in a real deployment it names that partner and gives their help line.
+            The household contacts the field partner who enrolled them. The payment note names that partner and gives their help line (synthetic in this demo).
           </p>
           <ul className="list-disc space-y-1.5 pl-5">
             <li>
