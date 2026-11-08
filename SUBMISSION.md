@@ -97,7 +97,7 @@ Firstlight runs entirely in the PayPal **sandbox**; no real money moves. All rec
 - **Model Context Protocol** — Firstlight runs a Streamable HTTP MCP server at `/mcp` with six tools: get_pool_status, list_active_events, get_allowance, create_donation, get_receipt, and check_payout_plan, which dry-runs a payout plan for this programme's households against the firewall before anything reaches PayPal with strict input and output schemas, plus a `/.well-known/firstlight.json` manifest and `/llms.txt` so agents can find it.
 - **USGS Earthquake Hazards API** — the recorded M7.7 Panama event (us6000u18k) the demo replays, plus a read-only live-feed script. **EMSC SeismicPortal** — independent corroboration.
 - **APIMatic Context Plugin for PayPal** — gave our AI coding assistant the PayPal API context while we built the integration.
-- **AG Grid** — plan and payout tables (custom theme, card layout on phones). **Render** — hosting from the `render.yaml` blueprint, with a Deploy to Render button. **Postman** — a collection of every public endpoint, MCP included (`docs/postman/`).
+- **AG Grid** — plan and payout tables (custom theme, pinned totals, CSV export of each batch for finance, card layouts on phones). **Render** — hosting from the `render.yaml` blueprint, with a Deploy to Render button. **Postman** — the judge path as a collection: a read-only folder safe for the Collection Runner (tests on every request, `planId` captured, PayPal reconciliation, all six MCP tools) and a separate folder for requests that change state or send sandbox money (`docs/postman/`).
 - **Leaflet / OpenStreetMap** — map.
 
 ## 7. Try it out links

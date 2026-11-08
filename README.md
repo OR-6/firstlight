@@ -27,7 +27,7 @@ On https://firstlight.onrender.com (the first request after idling can take abou
 2. **Open a household** in the plan to see every firewall check, then **approve** the $680 plan (it's over the $300 that can go out without review).
 3. **Send payouts** and watch PayPal sandbox statuses arrive on **Payouts**, which also lists the real sandbox batches we already ran.
 4. **Red team → Compromised agent.** A script that obeys every injected instruction; $0.00 reaches anyone not owed.
-5. **Audit → Verify chain.** Every step is hash-chained.
+5. **Audit → Verify chain**, then **Tamper with a copy** to watch the check catch an edit. Each payout batch on Payouts links to its audit entries.
 6. **Run your own copy:** [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OR-6/firstlight) — replay mode needs no AI key; payouts and donations need your own PayPal sandbox credentials.
 7. **[How it works](https://firstlight.onrender.com/how-it-works)** explains who uses which screen and how households are enrolled; **Agents** shows how another AI agent donates over MCP.
 
@@ -213,9 +213,9 @@ Things we learned building on the PayPal Developer Platform that other builders 
   - the SDK has no Payouts or webhook-verification calls, so those use the REST API.
 
   See [docs/decisions.md](docs/decisions.md) D51 and the comments in `src/paypal/orders.ts`.
-- **AG Grid:** the plan and payout tables use AG Grid Community with a custom `themeQuartz` theme matching the road-sign design system, wrapped text for the multilingual notes, and a card layout on phones (`src/ui/PlanGrid.tsx`).
+- **AG Grid:** the plan and payout tables use AG Grid Community with a custom `themeQuartz` theme matching the road-sign design system, only the modules in use, a pinned total row, sortable distance and amount, CSV export of each payout batch for finance, and card layouts on phones (`src/ui/PlanGrid.tsx`, `src/app/payouts/page.tsx`).
 - **Render:** deployed from the `render.yaml` blueprint with a readiness check (`/api/health` opens the database and reports what the instance can do). The Deploy button above creates your own copy: it runs in replay mode with no keys; add `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET` and `PAYEES_JSON` to send sandbox payouts, `PAYPAL_WEBHOOK_ID` for webhooks, and `APP_BASE_URL` if you use a custom domain.
-- **Postman:** [`docs/postman/firstlight.postman_collection.json`](docs/postman/firstlight.postman_collection.json) has every public endpoint in the order a judge would try them, MCP calls included. Import it, keep `baseUrl` as the hosted demo, and run top to bottom.
+- **Postman:** [`docs/postman/firstlight.postman_collection.json`](docs/postman/firstlight.postman_collection.json): the first folder is read-only and safe to run top to bottom in the Collection Runner (tests on every request, `planId` captured automatically, PayPal reconciliation, all six MCP tools including `check_payout_plan`); the second folder changes state and can send sandbox money.
 
 ## Judge access
 
